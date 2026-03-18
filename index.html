@@ -305,6 +305,7 @@
             },
             baseUrl: "./harp/"
         };
+        const PIANO_RELEASE = 0.18;
 
         function applyInstrumentVolume(type) {
             if (!instrument || !instrument.volume) return;
@@ -324,7 +325,8 @@
 
             instrument = new Tone.Sampler({
                 urls: PIANO_SAMPLE_CONFIG.urls,
-                baseUrl: PIANO_SAMPLE_CONFIG.baseUrl
+                baseUrl: PIANO_SAMPLE_CONFIG.baseUrl,
+                release: PIANO_RELEASE
             }).connect(reverb);
 
             await Tone.loaded();
