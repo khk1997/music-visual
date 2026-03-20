@@ -693,11 +693,12 @@
                 uniform float uTime;
                 uniform vec3 uImpacts[20];
                 uniform float uImpactTimes[20];
+                attribute float aType;
                 varying float vGlow;
                 varying float vType;
 
                 void main() {
-                    vType = mod(position.x * 0.4 + position.y * 0.7, 4.0);
+                    vType = aType;
 
                     float totalOsc = 0.0;
                     float brightEffect = 0.0;
@@ -760,17 +761,20 @@
             const yStart = -viewHeight / 2;
 
             const bgPositions = [];
+            const bgTypes = [];
             for (let i = 0; i < xCount; i++) {
                 for (let j = 0; j < yCount; j++) {
                     const x = xStart + i * spacing;
                     const y = yStart + j * spacing;
                     bgPositions.push(x, y, planeZ);
+                    bgTypes.push((i + j * 2) % 4);
                 }
             }
 
             if (bgGeometry) bgGeometry.dispose();
             bgGeometry = new THREE.BufferGeometry();
             bgGeometry.setAttribute('position', new THREE.Float32BufferAttribute(bgPositions, 3));
+            bgGeometry.setAttribute('aType', new THREE.Float32BufferAttribute(bgTypes, 1));
             return bgGeometry;
         }
 
@@ -900,7 +904,7 @@
             const points = new THREE.Points(
                 geo,
                 new THREE.ShaderMaterial({
-                    uniforms: { uTex: { value: colorTex }, uTime: { value: 0 } },
+                    uniforms: { uTex: { value: colorTex } },
                     vertexShader: `
                         attribute float aSize;
                         attribute float aAlpha;
@@ -929,7 +933,6 @@
                     `,
                     fragmentShader: `
                         uniform sampler2D uTex;
-                        uniform float uTime;
 
                         varying float vAlpha;
                         varying float vType;
@@ -961,19 +964,7 @@
                             finalUV.x = (finalUV.x + floor(vType + 0.5)) / 4.0;
 
                             vec4 texColor = texture2D(uTex, finalUV);
-
-                            // --- 閃爍效果（移除 gl_FragCoord 條紋）---
-                            // 依 vType 決定是否閃爍（約一半有閃爍，一半恆亮）
-                            float flicker = 1.0;
-                            if (fract(vType * 0.37 + vRotX * 0.21) > 0.5) {
-                                flicker = 0.6 + 0.5 * sin(uTime * 3.0 + vRotX * 2.0 + vRotY * 3.1 + vRotZ * 1.7 + vType * 5.0);
-                            }
-                            // 讓部分粒子有機率直接熄滅
-                            float cutoff = 0.25 + 0.5 * sin(uTime * 2.2 + vRotY * 3.0 + vRotZ * 1.5 + vType * 2.0);
-                            float alpha = texColor.a * vAlpha * flicker;
-                            if (alpha < cutoff) discard;
-
-                            gl_FragColor = vec4(texColor.rgb, alpha);
+                            gl_FragColor = vec4(texColor.rgb, texColor.a * vAlpha);
                         }
                     `,
                     transparent: true,
@@ -1129,13 +1120,6 @@
                     r.mesh.geometry.dispose();
                     r.mesh.material.dispose();
                     activeRings.splice(i, 1);
-                }
-            }
-
-            // 更新火花 shader 的 uTime
-            for (const s of activeSparks) {
-                if (s.points.material.uniforms && s.points.material.uniforms.uTime) {
-                    s.points.material.uniforms.uTime.value = now;
                 }
             }
 
