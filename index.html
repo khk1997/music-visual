@@ -9,7 +9,312 @@
             overflow: hidden;
             background: #000;
             cursor: crosshair;
-            font-family: sans-serif;
+            font-family: "Segoe UI", "Noto Sans TC", sans-serif;
+        }
+
+        #app-shell {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 120;
+        }
+
+        #mode-screen {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 32px;
+            box-sizing: border-box;
+            background:
+                radial-gradient(circle at top, rgba(0, 210, 255, 0.16), transparent 42%),
+                radial-gradient(circle at bottom, rgba(255, 103, 226, 0.14), transparent 34%),
+                linear-gradient(180deg, rgba(2, 7, 16, 0.9), rgba(3, 6, 12, 0.84));
+            backdrop-filter: blur(16px);
+            pointer-events: auto;
+            opacity: 1;
+            transition: opacity 0.35s ease;
+            overflow: hidden;
+        }
+
+        #mode-screen.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #mode-screen::before,
+        #mode-screen::after {
+            content: '';
+            position: absolute;
+            width: 42vw;
+            height: 42vw;
+            min-width: 320px;
+            min-height: 320px;
+            border-radius: 999px;
+            filter: blur(30px);
+            opacity: 0.82;
+            pointer-events: none;
+        }
+
+        #mode-screen::before {
+            top: -12vh;
+            left: -8vw;
+            background: radial-gradient(circle, rgba(0, 210, 255, 0.2), transparent 68%);
+            animation: drift-blue 18s ease-in-out infinite alternate;
+        }
+
+        #mode-screen::after {
+            right: -10vw;
+            bottom: -16vh;
+            background: radial-gradient(circle, rgba(255, 103, 226, 0.18), transparent 68%);
+            animation: drift-violet 22s ease-in-out infinite alternate;
+        }
+
+        @keyframes drift-blue {
+            from {
+                transform: translate3d(0, 0, 0) scale(1);
+            }
+            to {
+                transform: translate3d(10vw, 8vh, 0) scale(1.08);
+            }
+        }
+
+        @keyframes drift-violet {
+            from {
+                transform: translate3d(0, 0, 0) scale(1);
+            }
+            to {
+                transform: translate3d(-11vw, -7vh, 0) scale(1.1);
+            }
+        }
+
+        .mode-panel {
+            width: min(980px, 100%);
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .mode-header {
+            color: #f5fbff;
+            text-align: center;
+        }
+
+        .mode-eyebrow {
+            font-size: 12px;
+            letter-spacing: 0.28em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.48);
+            margin-bottom: 14px;
+        }
+
+        .mode-title {
+            font-size: clamp(34px, 5vw, 62px);
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            margin: 0;
+        }
+
+        .mode-subtitle {
+            margin: 12px auto 0;
+            max-width: 620px;
+            font-size: 15px;
+            line-height: 1.7;
+            color: rgba(255,255,255,0.7);
+        }
+
+        .mode-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+        }
+
+        .mode-card {
+            position: relative;
+            min-height: 280px;
+            padding: 28px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 32px;
+            border-top-left-radius: 18px;
+            border-bottom-right-radius: 18px;
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02)),
+                rgba(7, 14, 24, 0.8);
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.08),
+                0 24px 60px rgba(0,0,0,0.45);
+            color: #fff;
+            text-align: left;
+            cursor: pointer;
+            transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
+            overflow: hidden;
+        }
+
+        .mode-card::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            border: 1.5px solid rgba(255, 255, 255, 0.08);
+            opacity: 0;
+            transition: opacity 0.22s ease, border-color 0.22s ease;
+            pointer-events: none;
+        }
+
+        .mode-card::before {
+            content: '';
+            position: absolute;
+            inset: auto -10% -35% auto;
+            width: 220px;
+            height: 220px;
+            border-radius: 999px;
+            filter: blur(12px);
+            opacity: 0.55;
+            pointer-events: none;
+        }
+
+        .mode-card[data-mode="free-play"]::before {
+            background: radial-gradient(circle, rgba(0, 210, 255, 0.4), transparent 70%);
+        }
+
+        .mode-card[data-mode="absolute-pitch"]::before {
+            background: radial-gradient(circle, rgba(255, 103, 226, 0.38), transparent 70%);
+        }
+
+        .mode-card:hover {
+            transform: translateY(-6px);
+            border-color: rgba(255,255,255,0.36);
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.14),
+                0 0 0 1px rgba(255,255,255,0.14),
+                0 28px 70px rgba(0,0,0,0.52);
+        }
+
+        .mode-card:hover::after {
+            opacity: 1;
+            border-color: rgba(255, 255, 255, 0.42);
+        }
+
+        .mode-card-label {
+            display: inline-flex;
+            align-items: center;
+            padding: 7px 12px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.08);
+            color: rgba(255,255,255,0.72);
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .mode-card-title {
+            margin: 18px 0 10px;
+            font-size: clamp(28px, 3vw, 40px);
+            font-weight: 800;
+        }
+
+        .mode-card-copy {
+            margin: 0;
+            max-width: 28ch;
+            font-size: 15px;
+            line-height: 1.7;
+            color: rgba(255,255,255,0.72);
+        }
+
+        .mode-card-footer {
+            position: absolute;
+            left: 28px;
+            right: 28px;
+            bottom: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: rgba(255,255,255,0.76);
+            font-size: 13px;
+        }
+
+        #playback-screen {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.28s ease;
+        }
+
+        #playback-screen.active {
+            opacity: 1;
+        }
+
+        #top-bar {
+            position: absolute;
+            top: 24px;
+            left: 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 101;
+            pointer-events: auto;
+        }
+
+        .top-bar-button {
+            border: 1px solid rgba(255,255,255,0.16);
+            background: rgba(10, 15, 25, 0.78);
+            color: #f4fbff;
+            border-radius: 999px;
+            padding: 9px 14px;
+            font-size: 12px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition:
+                transform 0.18s ease,
+                border-color 0.18s ease,
+                background 0.18s ease,
+                box-shadow 0.18s ease,
+                color 0.18s ease;
+        }
+
+        .top-bar-button:hover {
+            transform: translateY(-2px);
+            border-color: rgba(255,255,255,0.42);
+            background: rgba(18, 32, 50, 0.92);
+            color: #ffffff;
+            box-shadow:
+                0 0 0 1px rgba(255,255,255,0.14),
+                0 10px 24px rgba(0,0,0,0.3),
+                0 0 22px rgba(0, 210, 255, 0.16);
+        }
+
+        .top-bar-button:active {
+            transform: translateY(0);
+        }
+
+        .top-bar-button.is-active {
+            border-color: rgba(255, 120, 120, 0.62);
+            background: rgba(72, 18, 24, 0.92);
+            box-shadow:
+                0 0 0 1px rgba(255, 120, 120, 0.18),
+                0 12px 26px rgba(0,0,0,0.34),
+                0 0 26px rgba(255, 82, 82, 0.2);
+        }
+
+        .top-bar-button.is-disabled {
+            opacity: 0.5;
+        }
+
+        #background-toggle {
+            min-width: 146px;
+            text-align: left;
+        }
+
+        #mode-status {
+            color: rgba(255,255,255,0.68);
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
         }
 
         #bottom-ui {
@@ -24,6 +329,11 @@
             z-index: 100;
             pointer-events: auto;
             align-items: stretch;
+        }
+
+        #bottom-ui.hidden {
+            opacity: 0;
+            pointer-events: none;
         }
 
         #key-panel {
@@ -179,56 +489,126 @@
             box-shadow: 0 0 20px #00d2ff;
             border-color: #00d2ff;
         }
+
+        @media (max-width: 820px) {
+            .mode-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .mode-card {
+                min-height: 220px;
+            }
+
+            #bottom-ui {
+                width: calc(100% - 24px);
+                left: 12px;
+                transform: none;
+                bottom: 12px;
+                flex-direction: column;
+                height: auto;
+            }
+
+            #key-panel {
+                width: 100%;
+                height: auto;
+            }
+
+            #piano-container {
+                min-height: 116px;
+            }
+        }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
 </head>
 <body>
-    <div id="bottom-ui">
-        <div id="key-panel">
-            <div id="current-key-label">C Major</div>
-
-            <div id="key-hint">Shift：升半音 / Ctrl：降半音</div>
-
-            <div class="single-row custom-select">
-                <select id="sound-select">
-                    <option value="synth">Synth</option>
-                    <option value="piano">Piano</option>
-                    <option value="harp">Harp</option>
-                    <option value="bell">Bell</option>
-                    <option value="marimba_kalimba">Marimba/Kalimba</option>
-                    <option value="chiptune_lead">Chiptune Lead</option>
-                    <option value="lofi_ep">Lo-fi EP</option>
-                </select>
-            </div>
-
-            <div class="control-row">
-                <div class="custom-select" style="flex:1;">
-                    <select id="key-select">
-                        <option value="C">C</option>
-                        <option value="C#">C#</option>
-                        <option value="D">D</option>
-                        <option value="Eb">Eb</option>
-                        <option value="E">E</option>
-                        <option value="F">F</option>
-                        <option value="F#">F#</option>
-                        <option value="G">G</option>
-                        <option value="Ab">Ab</option>
-                        <option value="A">A</option>
-                        <option value="Bb">Bb</option>
-                        <option value="B">B</option>
-                    </select>
+    <div id="app-shell">
+        <div id="mode-screen">
+            <div class="mode-panel">
+                <div class="mode-header">
+                    <div class="mode-eyebrow">Visual Music Game</div>
+                    <h1 class="mode-title">選擇你的進入方式</h1>
+                    <p class="mode-subtitle">先從首頁挑選模式。自由演奏會直接進入目前的演奏介面，絕對音感測試則先保留成下一步擴充的入口。</p>
                 </div>
-                <div class="custom-select" style="flex:1;">
-                    <select id="mode-select">
-                        <option value="major">Major</option>
-                        <option value="minor">Minor</option>
-                    </select>
+                <div class="mode-grid">
+                    <button class="mode-card" id="free-play-card" data-mode="free-play" type="button">
+                        <span class="mode-card-label">Mode 01</span>
+                        <h2 class="mode-card-title">自由演奏模式</h2>
+                        <p class="mode-card-copy">進入即時音樂遊玩畫面，用鍵盤或滑鼠觸發音符、火花和背景波浪。</p>
+                        <div class="mode-card-footer">
+                            <span>立即開始</span>
+                            <span>Enter</span>
+                        </div>
+                    </button>
+                    <button class="mode-card" id="absolute-pitch-card" data-mode="absolute-pitch" type="button">
+                        <span class="mode-card-label">Mode 02</span>
+                        <h2 class="mode-card-title">絕對音感測試</h2>
+                        <p class="mode-card-copy">之後可以放聽音辨識、答題流程、分數結算與難度設計，先把入口位置保留下來。</p>
+                        <div class="mode-card-footer">
+                            <span>準備中</span>
+                            <span>Soon</span>
+                        </div>
+                    </button>
                 </div>
             </div>
         </div>
 
-        <div id="piano-container">
-            <div id="piano-ui"></div>
+        <div id="playback-screen">
+            <div id="top-bar">
+                <button id="back-home" class="top-bar-button" type="button">Back</button>
+                <button id="background-toggle" class="top-bar-button" type="button">Background: PlayStation Style</button>
+                <button id="record-toggle" class="top-bar-button" type="button">Record</button>
+                <button id="playback-toggle" class="top-bar-button" type="button">Playback</button>
+                <div id="mode-status">Free Play</div>
+            </div>
+
+            <div id="bottom-ui" class="hidden">
+                <div id="key-panel">
+                    <div id="current-key-label">C Major</div>
+
+                    <div id="key-hint">Shift：升半音 / Ctrl：降半音</div>
+
+                    <div class="single-row custom-select">
+                        <select id="sound-select">
+                            <option value="synth">Synth</option>
+                            <option value="piano">Piano</option>
+                            <option value="harp">Harp</option>
+                            <option value="bell">Bell</option>
+                            <option value="marimba_kalimba">Marimba/Kalimba</option>
+                            <option value="chiptune_lead">Chiptune Lead</option>
+                            <option value="lofi_ep">Lo-fi EP</option>
+                        </select>
+                    </div>
+
+                    <div class="control-row">
+                        <div class="custom-select" style="flex:1;">
+                            <select id="key-select">
+                                <option value="C">C</option>
+                                <option value="C#">C#</option>
+                                <option value="D">D</option>
+                                <option value="Eb">Eb</option>
+                                <option value="E">E</option>
+                                <option value="F">F</option>
+                                <option value="F#">F#</option>
+                                <option value="G">G</option>
+                                <option value="Ab">Ab</option>
+                                <option value="A">A</option>
+                                <option value="Bb">Bb</option>
+                                <option value="B">B</option>
+                            </select>
+                        </div>
+                        <div class="custom-select" style="flex:1;">
+                            <select id="mode-select">
+                                <option value="major">Major</option>
+                                <option value="minor">Minor</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="piano-container">
+                    <div id="piano-ui"></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -255,8 +635,33 @@
         let lofiFilter = null;
         const activePianoKeyStates = new Map();
         const PIANO_TAP_DURATION = 0.12;
+        let currentScreen = 'home';
 
+        const modeScreen = document.getElementById('mode-screen');
+        const playbackScreen = document.getElementById('playback-screen');
+        const bottomUi = document.getElementById('bottom-ui');
+        const freePlayCard = document.getElementById('free-play-card');
+        const absolutePitchCard = document.getElementById('absolute-pitch-card');
+        const backHomeButton = document.getElementById('back-home');
+        const backgroundToggleButton = document.getElementById('background-toggle');
+        const recordToggleButton = document.getElementById('record-toggle');
+        const playbackToggleButton = document.getElementById('playback-toggle');
         const soundSelect = document.getElementById('sound-select');
+
+        const BACKGROUND_THEMES = [
+            { id: 'playstation-style', label: 'PlayStation Style', color: 0x000000, exposure: 2.0 },
+            { id: 'deep-blue', label: 'Deep Blue', color: 0x03111f, exposure: 1.75 },
+            { id: 'violet-dusk', label: 'Violet Dusk', color: 0x13091d, exposure: 1.9 }
+        ];
+        let currentBackgroundIndex = 0;
+        let backgroundVisualsReady = false;
+        let isRecording = false;
+        let recordingStartTime = 0;
+        let recordedEvents = [];
+        let isPlaybackActive = false;
+        let playbackEndTimer = null;
+        const playbackTimers = [];
+        const playbackPianoNotes = new Map();
 
         // 各音色音量（單位：dB）
         const INSTRUMENT_VOLUMES = {
@@ -265,7 +670,7 @@
             harp: 10,
             bell: 0,
             marimba_kalimba: 2,
-            chiptune_lead: -1,
+            chiptune_lead: -9,
             lofi_ep: -2
         };
 
@@ -566,7 +971,7 @@
             const startTime = getTriggerTime();
 
             instrument.triggerAttack(note, startTime);
-            activePianoKeyStates.set(key, { note, startTime });
+            activePianoKeyStates.set(key, { note, startTime, midi });
         }
 
         function releasePianoKey(key) {
@@ -609,6 +1014,187 @@
             if (active) allKeysMap[midi].classList.add('active');
             else allKeysMap[midi].classList.remove('active');
         }
+
+        function isInteractivePlayback() {
+            return currentScreen === 'free-play';
+        }
+
+        function setScreen(nextScreen) {
+            currentScreen = nextScreen;
+
+            const isHome = nextScreen === 'home';
+            const isFreePlay = nextScreen === 'free-play';
+
+            if (!isFreePlay) {
+                if (isRecording) stopRecording();
+                if (isPlaybackActive) stopPlayback();
+            }
+
+            modeScreen.classList.toggle('hidden', !isHome);
+            playbackScreen.classList.toggle('active', isFreePlay);
+            bottomUi.classList.toggle('hidden', !isFreePlay);
+            document.body.style.cursor = isFreePlay ? 'crosshair' : 'default';
+        }
+
+        freePlayCard.addEventListener('click', () => {
+            setScreen('free-play');
+        });
+
+        absolutePitchCard.addEventListener('click', () => {
+            window.alert('絕對音感測試模式正在規劃中，先從自由演奏模式開始吧。');
+        });
+
+        backHomeButton.addEventListener('click', () => {
+            setScreen('home');
+        });
+
+        setScreen('home');
+
+        function nowSeconds() {
+            return performance.now() * 0.001;
+        }
+
+        function updateTransportButtons() {
+            recordToggleButton.textContent = isRecording ? 'Stop Rec' : 'Record';
+            recordToggleButton.classList.toggle('is-active', isRecording);
+
+            playbackToggleButton.textContent = isPlaybackActive ? 'Playing...' : 'Playback';
+            playbackToggleButton.classList.toggle('is-active', isPlaybackActive);
+
+            const playbackDisabled = isRecording || recordedEvents.length === 0;
+            playbackToggleButton.classList.toggle('is-disabled', playbackDisabled);
+            playbackToggleButton.disabled = playbackDisabled;
+        }
+
+        function stopPlayback() {
+            for (const timer of playbackTimers) {
+                clearTimeout(timer);
+            }
+            playbackTimers.length = 0;
+
+            if (playbackEndTimer !== null) {
+                clearTimeout(playbackEndTimer);
+                playbackEndTimer = null;
+            }
+
+            for (const midi of Array.from(playbackPianoNotes.keys())) {
+                releasePlaybackPianoMidi(midi);
+            }
+
+            isPlaybackActive = false;
+            updateTransportButtons();
+        }
+
+        function stopRecording() {
+            isRecording = false;
+            updateTransportButtons();
+        }
+
+        function startRecording() {
+            stopPlayback();
+            recordedEvents = [];
+            recordingStartTime = nowSeconds();
+            isRecording = true;
+            updateTransportButtons();
+        }
+
+        function recordPerformanceEvent(event) {
+            if (!isRecording) return;
+
+            recordedEvents.push({
+                ...event,
+                time: nowSeconds() - recordingStartTime
+            });
+        }
+
+        function attackPlaybackPianoMidi(midi) {
+            if (!instrument || currentSound !== 'piano' || playbackPianoNotes.has(midi)) return;
+
+            const note = Tone.Frequency(midi, "midi").toNote();
+            const startTime = getTriggerTime();
+            instrument.triggerAttack(note, startTime);
+            playbackPianoNotes.set(midi, { note, startTime });
+        }
+
+        function releasePlaybackPianoMidi(midi) {
+            if (!instrument) return;
+
+            const state = playbackPianoNotes.get(midi);
+            if (!state) return;
+
+            const now = getTriggerTime();
+            const heldFor = now - state.startTime;
+            const releaseTime = heldFor < PIANO_TAP_DURATION
+                ? now + (PIANO_TAP_DURATION - heldFor)
+                : now;
+
+            instrument.triggerRelease(state.note, releaseTime);
+            playbackPianoNotes.delete(midi);
+        }
+
+        function playVisualFeedback(midi, ringX, ringY) {
+            const ringPoint = new THREE.Vector3(ringX, ringY, RING_PLANE_Z);
+            const bgPoint = projectPointToPlane(ringPoint, BG_PLANE_Z);
+            const sparkPoint = projectPointToPlane(ringPoint, SPARK_PLANE_Z);
+
+            triggerInteraction(bgPoint, midi);
+            spawnSparks(sparkPoint);
+        }
+
+        async function startPlayback() {
+            if (recordedEvents.length === 0 || isRecording) return;
+
+            stopPlayback();
+
+            try {
+                await initAudio();
+            } catch (err) {
+                console.error('Playback audio init failed:', err);
+                return;
+            }
+
+            isPlaybackActive = true;
+            updateTransportButtons();
+
+            for (const event of recordedEvents) {
+                const timer = setTimeout(() => {
+                    if (event.type === 'note-on') {
+                        playVisualFeedback(event.midi, event.ringX, event.ringY);
+
+                        if (currentSound === 'piano' && event.sustained) {
+                            attackPlaybackPianoMidi(event.midi);
+                        } else {
+                            playMidi(event.midi);
+                        }
+                    } else if (event.type === 'note-off' && currentSound === 'piano') {
+                        releasePlaybackPianoMidi(event.midi);
+                    }
+                }, Math.max(0, event.time * 1000));
+
+                playbackTimers.push(timer);
+            }
+
+            const lastEventTime = recordedEvents.reduce((maxTime, event) => Math.max(maxTime, event.time), 0);
+            playbackEndTimer = setTimeout(() => {
+                stopPlayback();
+            }, (lastEventTime + 0.25) * 1000);
+        }
+
+        recordToggleButton.addEventListener('click', () => {
+            if (isRecording) stopRecording();
+            else startRecording();
+        });
+
+        playbackToggleButton.addEventListener('click', async () => {
+            if (isPlaybackActive) {
+                stopPlayback();
+                return;
+            }
+
+            await startPlayback();
+        });
+
+        updateTransportButtons();
 
         // =========================================================
         // 3. 調性系統
@@ -707,7 +1293,7 @@
         // 5. 視覺場景
         // =========================================================
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x020a12);
+        scene.background = new THREE.Color(0x000000);
 
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.z = 8;
@@ -720,6 +1306,37 @@
         document.body.appendChild(renderer.domElement);
 
         scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+
+        function getCurrentBackgroundTheme() {
+            return BACKGROUND_THEMES[currentBackgroundIndex];
+        }
+
+        function usesLegacyGridEffects() {
+            return getCurrentBackgroundTheme().id === 'playstation-style';
+        }
+
+        function applyBackgroundTheme(index) {
+            currentBackgroundIndex = (index + BACKGROUND_THEMES.length) % BACKGROUND_THEMES.length;
+            const theme = BACKGROUND_THEMES[currentBackgroundIndex];
+
+            scene.background = new THREE.Color(theme.color);
+            renderer.toneMappingExposure = theme.exposure;
+            backgroundToggleButton.textContent = `Background: ${theme.label}`;
+
+            if (backgroundVisualsReady) {
+                syncBackgroundVisualState();
+            }
+        }
+
+        function cycleBackgroundTheme() {
+            applyBackgroundTheme(currentBackgroundIndex + 1);
+        }
+
+        backgroundToggleButton.addEventListener('click', () => {
+            cycleBackgroundTheme();
+        });
+
+        applyBackgroundTheme(currentBackgroundIndex);
 
         // =========================================================
         // 6. 貼圖生成
@@ -839,7 +1456,7 @@
                         }
                     }
 
-                    vGlow = (0.12 + brightEffect + max(0.0, totalOsc * 2.0)) * 1.2;
+                    vGlow = max(0.0, brightEffect + max(0.0, totalOsc * 2.0)) * 1.2;
 
                     vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
                     gl_PointSize = 1.18 * (1.0 + totalOsc * 1.2) * (350.0 / -mvPos.z);
@@ -855,7 +1472,7 @@
                     vec2 uv = gl_PointCoord;
                     uv.x = (uv.x + floor(vType)) / 4.0;
                     vec4 tex = texture2D(uTex, uv);
-                    gl_FragColor = vec4(tex.rgb * vGlow, tex.a * 0.25);
+                    gl_FragColor = vec4(tex.rgb * vGlow, tex.a * vGlow * 0.25);
                 }
             `,
             transparent: true,
@@ -909,70 +1526,57 @@
             bgPoints = new THREE.Points(geometry, bgMaterial);
             bgPoints.renderOrder = 0;
             scene.add(bgPoints);
+            bgPoints.visible = usesLegacyGridEffects();
         }
 
         updateBgPoints();
+        backgroundVisualsReady = true;
+        syncBackgroundVisualState();
 
 
         // =========================================================
         // 8. 光圈與火花
         // =========================================================
-        const activeRings = [];
         const activeSparks = [];
         let impactIdx = 0;
 
-        function triggerInteraction(bgPoint, ringPoint, midi) {
-            bgUniforms.uImpacts.value[impactIdx].set(bgPoint.x, bgPoint.y, 0);
-            bgUniforms.uImpactTimes.value[impactIdx] = performance.now() * 0.001;
-            impactIdx = (impactIdx + 1) % 20;
+        function clearActiveSparks() {
+            for (let i = activeSparks.length - 1; i >= 0; i--) {
+                const s = activeSparks[i];
+                scene.remove(s.points);
+                s.geo.dispose();
+                s.points.material.dispose();
+            }
+            activeSparks.length = 0;
+        }
 
-            const ringUniforms = {
-                u_time: { value: 0 },
-                u_intensity: { value: 1.0 },
-                u_color: { value: new THREE.Color().setHSL(Math.random(), 0.8, 0.6) }
-            };
+        function syncBackgroundVisualState() {
+            const showLegacyEffects = usesLegacyGridEffects();
 
-            const mesh = new THREE.Mesh(
-                new THREE.PlaneGeometry(3, 3),
-                new THREE.ShaderMaterial({
-                    uniforms: ringUniforms,
-                    vertexShader: `
-                        varying vec2 vUv;
-                        void main() {
-                            vUv = uv;
-                            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                        }
-                    `,
-                    fragmentShader: `
-                        uniform float u_time;
-                        uniform float u_intensity;
-                        uniform vec3 u_color;
-                        varying vec2 vUv;
+            if (bgPoints) {
+                bgPoints.visible = showLegacyEffects;
+            }
 
-                        void main() {
-                            vec2 uv = vUv - 0.5;
-                            float d = length(uv);
-                            float ring = 0.01 / abs(d + sin(d * 20.0 - u_time * 5.0) * 0.02 - u_intensity * 0.4);
-                            float fade = smoothstep(0.5, 0.1, d);
-                            gl_FragColor = vec4(u_color * ring * fade * u_intensity, 1.0);
-                        }
-                    `,
-                    transparent: true,
-                    blending: THREE.AdditiveBlending,
-                    depthWrite: false
-                })
-            );
+            if (!showLegacyEffects) {
+                bgUniforms.uImpactTimes.value.fill(-100);
+                clearActiveSparks();
+            }
+        }
 
-            mesh.position.set(ringPoint.x, ringPoint.y, RING_PLANE_Z);
-            mesh.renderOrder = 1;
-            scene.add(mesh);
-            activeRings.push({ mesh, uniforms: ringUniforms });
+        function triggerInteraction(bgPoint, midi) {
+            if (usesLegacyGridEffects()) {
+                bgUniforms.uImpacts.value[impactIdx].set(bgPoint.x, bgPoint.y, 0);
+                bgUniforms.uImpactTimes.value[impactIdx] = performance.now() * 0.001;
+                impactIdx = (impactIdx + 1) % 20;
+            }
 
             highlightKey(midi, true);
             setTimeout(() => highlightKey(midi, false), 150);
         }
 
         function spawnSparks(point) {
+            if (!usesLegacyGridEffects()) return;
+
             const count = 8;
 
             const geo = new THREE.BufferGeometry();
@@ -1000,7 +1604,7 @@
                 vel[i * 3 + 1] = Math.sin(angle) * speed;
                 vel[i * 3 + 2] = (Math.random() - 0.5) * 0.01;
 
-                sizes[i] = 3.0 + Math.random() * 1.8;
+                sizes[i] = 2.6 + Math.random() * 1.4;
                 alphas[i] = 1.5;
                 types[i] = Math.floor(Math.random() * 4);
 
@@ -1157,6 +1761,13 @@
         // 10. 鍵盤互動
         // =========================================================
         window.addEventListener('keydown', async (e) => {
+            if (!isInteractivePlayback()) {
+                if (currentScreen === 'home' && e.key === 'Enter') {
+                    setScreen('free-play');
+                }
+                return;
+            }
+
             const key = e.key.toLowerCase();
             const midi = getMidiFromScaleKey(key, e.shiftKey, e.ctrlKey);
 
@@ -1167,11 +1778,9 @@
                 try {
                     await initAudio();
                     const { x, y } = getKeyVisualPosition(key);
-                    const ringPoint = new THREE.Vector3(x, y, RING_PLANE_Z);
-                    const bgPoint = projectPointToPlane(ringPoint, BG_PLANE_Z);
-                    const sparkPoint = projectPointToPlane(ringPoint, SPARK_PLANE_Z);
-                    triggerInteraction(bgPoint, ringPoint, midi);
-                    spawnSparks(sparkPoint);
+                    const sustained = currentSound === 'piano';
+                    playVisualFeedback(midi, x, y);
+                    recordPerformanceEvent({ type: 'note-on', midi, ringX: x, ringY: y, sustained });
 
                     if (currentSound === 'piano') {
                         playPianoKeyDown(key, midi);
@@ -1185,22 +1794,39 @@
         });
 
         window.addEventListener('keyup', (e) => {
+            if (!isInteractivePlayback()) return;
+
             const key = e.key.toLowerCase();
 
             if (currentSound === 'piano' && activePianoKeyStates.has(key)) {
+                const state = activePianoKeyStates.get(key);
+                if (state) {
+                    recordPerformanceEvent({ type: 'note-off', midi: state.midi });
+                }
                 releasePianoKey(key);
             }
         });
 
         window.addEventListener('mousedown', async (e) => {
-            const bottomUi = document.getElementById('bottom-ui');
+            if (!isInteractivePlayback()) return;
+
+            const topBar = document.getElementById('top-bar');
             const rect = bottomUi.getBoundingClientRect();
+            const topBarRect = topBar.getBoundingClientRect();
 
             if (
-                e.clientX >= rect.left &&
-                e.clientX <= rect.right &&
-                e.clientY >= rect.top &&
-                e.clientY <= rect.bottom
+                (
+                    e.clientX >= rect.left &&
+                    e.clientX <= rect.right &&
+                    e.clientY >= rect.top &&
+                    e.clientY <= rect.bottom
+                ) ||
+                (
+                    e.clientX >= topBarRect.left &&
+                    e.clientX <= topBarRect.right &&
+                    e.clientY >= topBarRect.top &&
+                    e.clientY <= topBarRect.bottom
+                )
             ) {
                 return;
             }
@@ -1210,11 +1836,8 @@
 
                 const midi = getMidiFromScaleKey('a', false, false) ?? 60;
                 const ringPoint = getScreenPointOnPlane(e.clientX, e.clientY, RING_PLANE_Z);
-                const bgPoint = projectPointToPlane(ringPoint, BG_PLANE_Z);
-                const sparkPoint = projectPointToPlane(ringPoint, SPARK_PLANE_Z);
-
-                triggerInteraction(bgPoint, ringPoint, midi);
-                spawnSparks(sparkPoint);
+                playVisualFeedback(midi, ringPoint.x, ringPoint.y);
+                recordPerformanceEvent({ type: 'note-on', midi, ringX: ringPoint.x, ringY: ringPoint.y, sustained: false });
                 playMidi(midi);
             } catch (err) {
                 console.error('Mouse audio init/play failed:', err);
@@ -1229,19 +1852,6 @@
 
             const now = performance.now() * 0.001;
             bgUniforms.uTime.value = now;
-
-            for (let i = activeRings.length - 1; i >= 0; i--) {
-                const r = activeRings[i];
-                r.uniforms.u_time.value = now;
-                r.uniforms.u_intensity.value *= 0.94;
-
-                if (r.uniforms.u_intensity.value < 0.01) {
-                    scene.remove(r.mesh);
-                    r.mesh.geometry.dispose();
-                    r.mesh.material.dispose();
-                    activeRings.splice(i, 1);
-                }
-            }
 
             for (let i = activeSparks.length - 1; i >= 0; i--) {
                 const s = activeSparks[i];
