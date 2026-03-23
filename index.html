@@ -447,6 +447,7 @@
 
         #piano-container {
             flex: 1;
+            min-width: 0;
             height: 100%;
             background: rgba(10, 15, 25, 0.9);
             border: 1px solid rgba(255, 255, 255, 0.15);
@@ -1493,7 +1494,7 @@
         const pianoContainer = document.getElementById('piano-container');
         const pianoUi = document.getElementById('piano-ui');
         const allKeysMap = {};
-        let lockedPianoWidth = null;
+        let pianoLayoutFrame = null;
 
         function createPianoKeys() {
             const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -1508,19 +1509,60 @@
 
         createPianoKeys();
 
-        function lockPianoLayoutWidth() {
-            if (lockedPianoWidth !== null) return;
+        function syncPianoLayoutWidth() {
             const measuredWidth = pianoContainer.clientWidth;
             if (!measuredWidth) return;
 
-            lockedPianoWidth = measuredWidth * 0.92;
-            pianoUi.style.width = `${lockedPianoWidth}px`;
-            pianoUi.style.minWidth = `${lockedPianoWidth}px`;
+            const nextWidth = measuredWidth * 0.92;
+            pianoUi.style.width = `${nextWidth}px`;
+            pianoUi.style.minWidth = `${nextWidth}px`;
         }
 
-        requestAnimationFrame(() => {
-            lockPianoLayoutWidth();
-        });
+        function schedulePianoLayoutSync() {
+            if (pianoLayoutFrame !== null) {
+                cancelAnimationFrame(pianoLayoutFrame);
+            }
+            pianoLayoutFrame = requestAnimationFrame(() => {
+                pianoLayoutFrame = null;
+                syncPianoLayoutWidth();
+            });
+        }
+
+        schedulePianoLayoutSync();
+        window.addEventListener('resize', schedulePianoLayoutSync);
+
+        if (typeof ResizeObserver !== 'undefined') {
+            new ResizeObserver(() => {
+                schedulePianoLayoutSync();
+            }).observe(pianoContainer);
+        }
+
+        function getPianoKeyboardBounds() {
+            const keys = Object.values(allKeysMap);
+            if (keys.length === 0) return null;
+
+            const uiRect = pianoUi.getBoundingClientRect();
+            let minLeft = Infinity;
+            let maxRight = -Infinity;
+            let minTop = Infinity;
+
+            for (const keyEl of keys) {
+                const rect = keyEl.getBoundingClientRect();
+                minLeft = Math.min(minLeft, rect.left - uiRect.left);
+                maxRight = Math.max(maxRight, rect.right - uiRect.left);
+                minTop = Math.min(minTop, rect.top - uiRect.top);
+            }
+
+            if (!Number.isFinite(minLeft) || !Number.isFinite(maxRight) || !Number.isFinite(minTop)) {
+                return null;
+            }
+
+            return {
+                leftX: minLeft,
+                rightX: maxRight,
+                topY: minTop
+            };
+        }
 
         function buildAbsolutePitchAnswerGrid() {
             for (const noteName of ABSOLUTE_PITCH_NOTES) {
@@ -2207,8 +2249,6 @@
             updateKeyUI();
         });
 
-        updateKeyUI();
-
         // =========================================================
         // 4. 鍵位映射
         // =========================================================
@@ -2242,7 +2282,6 @@
             'o': { degree: 1, octaveBase: 84 },
             'p': { degree: 2, octaveBase: 84 }
         };
-
         function getMidiFromScaleKey(key, shiftKey, ctrlKey) {
             const info = scaleKeyMap[key];
             if (!info) return null;
@@ -2259,6 +2298,7 @@
 
             return Math.max(21, Math.min(108, midi));
         }
+        updateKeyUI();
 
         // =========================================================
         // 5. 視覺場景
@@ -2479,31 +2519,38 @@
             canvas.height = 256;
             const ctx = canvas.getContext('2d');
 
-            function drawRoundedRectPath(x, y, width, height, radius) {
-                const r = Math.min(radius, width * 0.5, height * 0.5);
-                ctx.beginPath();
-                ctx.moveTo(x + r, y);
-                ctx.lineTo(x + width - r, y);
-                ctx.quadraticCurveTo(x + width, y, x + width, y + r);
-                ctx.lineTo(x + width, y + height - r);
-                ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
-                ctx.lineTo(x + r, y + height);
-                ctx.quadraticCurveTo(x, y + height, x, y + height - r);
-                ctx.lineTo(x, y + r);
-                ctx.quadraticCurveTo(x, y, x + r, y);
-                ctx.closePath();
-            }
-
             const gradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
             gradient.addColorStop(0, 'rgba(0, 210, 255, 0.0)');
-            gradient.addColorStop(0.14, 'rgba(0, 210, 255, 0.22)');
-            gradient.addColorStop(0.52, 'rgba(116, 211, 255, 0.78)');
-            gradient.addColorStop(0.85, 'rgba(183, 235, 255, 0.95)');
-            gradient.addColorStop(1, 'rgba(255, 255, 255, 0.0)');
+            gradient.addColorStop(0.14, 'rgba(0, 210, 255, 0.14)');
+            gradient.addColorStop(0.52, 'rgba(116, 211, 255, 0.72)');
+            gradient.addColorStop(0.9, 'rgba(183, 235, 255, 0.92)');
+            gradient.addColorStop(0.985, 'rgba(228, 248, 255, 0.82)');
+            gradient.addColorStop(1, 'rgba(228, 248, 255, 0.58)');
 
             ctx.fillStyle = gradient;
-            drawRoundedRectPath(10, 0, 44, 256, 20);
-            ctx.fill();
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const horizontalMask = ctx.createLinearGradient(0, 0, canvas.width, 0);
+            horizontalMask.addColorStop(0, 'rgba(255,255,255,0)');
+            horizontalMask.addColorStop(0.16, 'rgba(255,255,255,0.12)');
+            horizontalMask.addColorStop(0.32, 'rgba(255,255,255,0.78)');
+            horizontalMask.addColorStop(0.5, 'rgba(255,255,255,1)');
+            horizontalMask.addColorStop(0.68, 'rgba(255,255,255,0.78)');
+            horizontalMask.addColorStop(0.84, 'rgba(255,255,255,0.12)');
+            horizontalMask.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.globalCompositeOperation = 'destination-in';
+            ctx.fillStyle = horizontalMask;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.globalCompositeOperation = 'source-over';
+
+            const coreGradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
+            coreGradient.addColorStop(0, 'rgba(255,255,255,0)');
+            coreGradient.addColorStop(0.18, 'rgba(70, 227, 255, 0.08)');
+            coreGradient.addColorStop(0.56, 'rgba(180, 244, 255, 0.32)');
+            coreGradient.addColorStop(0.9, 'rgba(255,255,255,0.18)');
+            coreGradient.addColorStop(1, 'rgba(255,255,255,0.1)');
+            ctx.fillStyle = coreGradient;
+            ctx.fillRect(canvas.width * 0.36, 0, canvas.width * 0.28, canvas.height);
 
             const glow = ctx.createRadialGradient(32, 28, 0, 32, 28, 34);
             glow.addColorStop(0, 'rgba(255,255,255,0.85)');
@@ -2542,7 +2589,6 @@
         const liveDeepBlueBars = new Map();
         let deepBlueBarGroup = null;
         let deepBlueMaskMesh = null;
-
         const bgMaterial = new THREE.ShaderMaterial({
             uniforms: bgUniforms,
             vertexShader: `
@@ -2676,8 +2722,7 @@
                 if (deepBlueBarGroup) {
                     deepBlueBarGroup.remove(bar.mesh);
                 }
-                bar.mesh.geometry.dispose();
-                bar.mesh.material.dispose();
+                disposeDeepBlueBarMesh(bar.mesh);
             }
             activeDeepBlueBars.length = 0;
             liveDeepBlueBars.clear();
@@ -2700,12 +2745,14 @@
             const bottomRight = getScreenPointOnPlane(window.innerWidth, window.innerHeight, DEEP_BLUE_BAR_PLANE_Z + 0.02);
             const { width: viewWidth } = getPlaneViewSize(DEEP_BLUE_BAR_PLANE_Z + 0.02);
             const maskHeight = Math.max(0.01, topLeft.y - bottomRight.y);
+            const backgroundColor = getCurrentBackgroundTheme().color;
 
             const geometry = new THREE.PlaneGeometry(viewWidth + 2, maskHeight);
             const material = new THREE.MeshBasicMaterial({
-                color: 0x03111f,
+                color: backgroundColor,
                 transparent: false,
-                depthWrite: false
+                depthWrite: false,
+                toneMapped: false
             });
 
             deepBlueMaskMesh = new THREE.Mesh(geometry, material);
@@ -2759,18 +2806,69 @@
         }
 
         function createDeepBlueBarMesh(color, width, height) {
-            const material = new THREE.MeshBasicMaterial({
+            const group = new THREE.Group();
+
+            const auraMaterial = new THREE.MeshBasicMaterial({
+                map: deepBlueBarTexture,
                 color,
                 transparent: true,
-                opacity: 0.72,
+                opacity: 0.24,
                 blending: THREE.AdditiveBlending,
                 depthWrite: false,
-                side: THREE.DoubleSide
+                side: THREE.DoubleSide,
+                toneMapped: false
             });
-            const geometry = new THREE.PlaneGeometry(width, height);
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.renderOrder = 1;
-            return mesh;
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                map: deepBlueBarTexture,
+                color,
+                transparent: true,
+                opacity: 0.46,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+                toneMapped: false
+            });
+            const coreMaterial = new THREE.MeshBasicMaterial({
+                color: color.clone().lerp(new THREE.Color(0xffffff), 0.08),
+                transparent: true,
+                opacity: 0.92,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+                toneMapped: false
+            });
+
+            const auraMesh = new THREE.Mesh(new THREE.PlaneGeometry(width * 1.78, height), auraMaterial);
+            const glowMesh = new THREE.Mesh(new THREE.PlaneGeometry(width * 1.28, height), glowMaterial);
+            const coreMesh = new THREE.Mesh(new THREE.PlaneGeometry(width * 0.82, height), coreMaterial);
+
+            auraMesh.renderOrder = 1;
+            glowMesh.renderOrder = 2;
+            coreMesh.renderOrder = 3;
+
+            group.add(auraMesh);
+            group.add(glowMesh);
+            group.add(coreMesh);
+            group.userData = { auraMesh, glowMesh, coreMesh };
+            return group;
+        }
+
+        function updateDeepBlueBarGlow(bar, baseOpacity) {
+            const shimmer = 0.94 + Math.sin(performance.now() * 0.01 + bar.midi * 0.35) * 0.08;
+            const visuals = bar.mesh.userData;
+            if (!visuals) return;
+
+            visuals.auraMesh.material.opacity = baseOpacity * 0.26 * shimmer;
+            visuals.glowMesh.material.opacity = baseOpacity * 0.78 * shimmer;
+            visuals.coreMesh.material.opacity = Math.min(1, baseOpacity * 1.08);
+        }
+
+        function disposeDeepBlueBarMesh(mesh) {
+            if (!mesh) return;
+            mesh.traverse((child) => {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) child.material.dispose();
+            });
         }
 
         function getDeepBlueBarKey(source, midi) {
@@ -2847,12 +2945,12 @@
                     bar.currentHeight = Math.max(bar.baseHeight, bar.topY - bar.entryY);
                     bar.mesh.scale.y = bar.currentHeight / bar.baseHeight;
                     bar.mesh.position.y = bar.entryY + bar.currentHeight * 0.5;
-                    bar.mesh.material.opacity = 0.82;
+                    updateDeepBlueBarGlow(bar, 0.88);
                 } else if (bar.sprouting) {
                     bar.currentHeight = Math.min(bar.targetHeight, bar.currentHeight + bar.releaseGrowthSpeed);
                     bar.mesh.scale.y = bar.currentHeight / bar.baseHeight;
                     bar.mesh.position.y = bar.launchY + bar.currentHeight * 0.5;
-                    bar.mesh.material.opacity = 0.82;
+                    updateDeepBlueBarGlow(bar, 0.84);
 
                     if (bar.currentHeight >= bar.targetHeight - 0.0001) {
                         bar.sprouting = false;
@@ -2861,15 +2959,14 @@
                     bar.mesh.position.y += bar.velocity;
                     bar.mesh.position.x += bar.drift;
                     bar.launchY += bar.velocity;
-                    bar.mesh.material.opacity = 0.82;
+                    updateDeepBlueBarGlow(bar, 0.72 * bar.fade);
                 }
 
                 if (bar.mesh.position.y > upperBound) {
                     if (deepBlueBarGroup) {
                         deepBlueBarGroup.remove(bar.mesh);
                     }
-                    bar.mesh.geometry.dispose();
-                    bar.mesh.material.dispose();
+                    disposeDeepBlueBarMesh(bar.mesh);
                     activeDeepBlueBars.splice(i, 1);
                 }
             }
@@ -2889,11 +2986,11 @@
 
         function getEffectColor(midi) {
             const palette = [
-                new THREE.Color(0xff7ac8),
-                new THREE.Color(0xff8f70),
-                new THREE.Color(0x7fffd4),
-                new THREE.Color(0xffffff),
-                new THREE.Color(0xb391ff)
+                new THREE.Color(0x00f5d4),
+                new THREE.Color(0x3cf0ff),
+                new THREE.Color(0x7a5cff),
+                new THREE.Color(0xff4fa3),
+                new THREE.Color(0xefffff)
             ];
             return palette[Math.abs(midi) % palette.length].clone();
         }
@@ -3406,7 +3503,7 @@
         animate();
 
         window.addEventListener('resize', () => {
-            lockPianoLayoutWidth();
+            schedulePianoLayoutSync();
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
