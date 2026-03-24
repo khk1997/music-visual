@@ -1527,8 +1527,7 @@
 
         const BACKGROUND_THEMES = [
             { id: 'playstation-style', label: 'PlayStation Style', color: 0x000000, exposure: 2.0 },
-            { id: 'deep-blue', label: 'Piano Roll', color: 0x03111f, exposure: 1.75 },
-            { id: 'violet-dusk', label: 'Violet Dusk', color: 0x13091d, exposure: 1.9 }
+            { id: 'deep-blue', label: 'Piano Roll', color: 0x03111f, exposure: 1.75 }
         ];
         let currentBackgroundIndex = 0;
         let backgroundVisualsReady = false;
@@ -3054,6 +3053,31 @@
         }
 
         const { sparkTex, bgTex, mistTex } = createPS5Textures();
+
+        function createHaloTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            const gradient = ctx.createRadialGradient(128, 128, 18, 128, 128, 128);
+            gradient.addColorStop(0, 'rgba(255,255,255,0.92)');
+            gradient.addColorStop(0.18, 'rgba(255,255,255,0.76)');
+            gradient.addColorStop(0.34, 'rgba(255,255,255,0.28)');
+            gradient.addColorStop(0.55, 'rgba(255,255,255,0.12)');
+            gradient.addColorStop(1, 'rgba(255,255,255,0)');
+
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(128, 128, 128, 0, Math.PI * 2);
+            ctx.fill();
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.needsUpdate = true;
+            return texture;
+        }
+
+        const haloTexture = createHaloTexture();
 
         function createDeepBlueBarTexture() {
             const canvas = document.createElement('canvas');
