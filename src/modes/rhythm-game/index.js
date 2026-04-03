@@ -1,7 +1,783 @@
-export function getRhythmGameMeta() {
+const LANE_KEYS = ['d', 'f', 'j', 'k'];
+const LANE_MIDIS = [60, 64, 67, 72];
+const LANE_VISUAL_X = [-1.8, -0.62, 0.62, 1.8];
+const JUDGE_WINDOWS = {
+    perfect: 0.04,
+    good: 0.09,
+    miss: 0.15
+};
+const TRAVEL_TIME = 1.8;
+const LEAD_IN = 1.6;
+const METRONOME_PITCH = {
+    accent: 'C6',
+    regular: 'G5'
+};
+
+function createDemoChart() {
+    const entries = [
+        { beat: 0, lane: 0 },
+        { beat: 1, lane: 1 },
+        { beat: 2, lane: 2 },
+        { beat: 3, lane: 3 },
+        { beat: 4, lane: 0, durationBeats: 2 },
+        { beat: 6.5, lane: 2 },
+        { beat: 7, lane: 1 },
+        { beat: 7.5, lane: 3 },
+        { beat: 8, lane: 0 },
+        { beat: 8.5, lane: 1 },
+        { beat: 9, lane: 2 },
+        { beat: 9.5, lane: 3 },
+        { beat: 10, lane: 1, durationBeats: 3 },
+        { beat: 10.5, lane: 3 },
+        { beat: 11, lane: 0 },
+        { beat: 11.5, lane: 2 },
+        { beat: 13.5, lane: 3 },
+        { beat: 14, lane: 0 },
+        { beat: 14.5, lane: 1 },
+        { beat: 15, lane: 2, durationBeats: 2 },
+        { beat: 15.5, lane: 3 },
+        { beat: 16, lane: 1 },
+        { beat: 16.5, lane: 0 },
+        { beat: 17, lane: 2 },
+        { beat: 17.5, lane: 3 }
+    ];
+
     return {
-        title: 'Rhythm Game',
-        status: 'planned',
-        description: '節奏遊戲的玩法核心和子模式會逐步拆進這個資料夾。'
+        bpm: 120,
+        title: 'Warmup Ladder + Hold Notes',
+        notes: entries.map((entry) => ({
+            lane: entry.lane,
+            time: entry.beat * 0.5,
+            duration: entry.durationBeats ? entry.durationBeats * 0.5 : 0,
+            type: entry.durationBeats ? 'hold' : 'tap'
+        }))
+    };
+}
+
+function getJudgeBucket(deltaSeconds) {
+    const absDelta = Math.abs(deltaSeconds);
+    if (absDelta <= JUDGE_WINDOWS.perfect) {
+        return 'perfect';
+    }
+    if (absDelta <= JUDGE_WINDOWS.good) {
+        return 'good';
+    }
+    return 'miss';
+}
+
+function getTapReward(bucket) {
+    if (bucket === 'perfect') {
+        return { score: 1000, weight: 1, label: 'Perfect' };
+    }
+    if (bucket === 'good') {
+        return { score: 650, weight: 0.72, label: 'Good' };
+    }
+    return { score: 0, weight: 0, label: 'Miss' };
+}
+
+function getHoldReward(bucket) {
+    if (bucket === 'perfect') {
+        return { score: 1400, weight: 1, label: 'Perfect Hold' };
+    }
+    if (bucket === 'good') {
+        return { score: 980, weight: 0.82, label: 'Good Hold' };
+    }
+    return { score: 0, weight: 0, label: 'Miss' };
+}
+
+export function createRhythmGameModule({
+    container,
+    initAudio,
+    nowSeconds,
+    createInstrumentInstance,
+    disposeLofiChain,
+    playMidiWithInstrument,
+    playVisualFeedback
+}) {
+    const panel = container.querySelector('.rhythm-game-panel');
+    const startButton = document.getElementById('rg-start-button');
+    const restartButton = document.getElementById('rg-restart-button');
+    const metronomeButton = document.getElementById('rg-metronome-button');
+    const scoreValue = document.getElementById('rg-score-value');
+    const comboValue = document.getElementById('rg-combo-value');
+    const accuracyValue = document.getElementById('rg-accuracy-value');
+    const progressValue = document.getElementById('rg-progress-value');
+    const statusCopy = document.getElementById('rg-status-copy');
+    const judgementValue = document.getElementById('rg-judgement-value');
+    const judgementDetail = document.getElementById('rg-judgement-detail');
+    const sessionHint = document.getElementById('rg-session-hint');
+    const results = document.getElementById('rg-results');
+    const resultGrade = document.getElementById('rg-result-grade');
+    const resultBias = document.getElementById('rg-result-bias');
+    const resultCombo = document.getElementById('rg-result-combo');
+    const laneElements = Array.from(container.querySelectorAll('.rhythm-game-lane'));
+    const laneRailElements = laneElements.map((lane) => lane.querySelector('.rhythm-game-lane-rail'));
+
+    const chart = createDemoChart();
+    const beatDuration = 60 / chart.bpm;
+    const chartDuration = chart.notes.reduce((maxTime, note) => Math.max(maxTime, note.time + (note.duration ?? 0)), 0);
+
+    let rhythmInstrument = null;
+    let rhythmLofiVibrato = null;
+    let rhythmLofiFilter = null;
+    let metronomeSynth = null;
+    let isActive = false;
+    let isRunning = false;
+    let metronomeEnabled = true;
+    let runStartAt = 0;
+    let animationFrameId = null;
+    let lastBeatIndex = -1;
+    let laneFlashTimers = [];
+    let notes = [];
+    let score = 0;
+    let combo = 0;
+    let maxCombo = 0;
+    let judgedCount = 0;
+    let totalAccuracyWeight = 0;
+    let timingOffsets = [];
+    let perfectCount = 0;
+    let goodCount = 0;
+    let missCount = 0;
+    const activeHoldNotes = new Map();
+    const holdSprayTimers = new Map();
+
+    function buildNotes() {
+        notes = chart.notes.map((note, index) => ({
+            ...note,
+            id: index,
+            endTime: note.time + (note.duration ?? 0),
+            state: 'pending',
+            element: null,
+            keyHeld: false,
+            holdBucket: null,
+            holdStartedAt: null,
+            releaseReason: null
+        }));
+
+        activeHoldNotes.clear();
+
+        laneRailElements.forEach((rail) => {
+            if (rail) {
+                rail.innerHTML = '';
+            }
+        });
+
+        for (const note of notes) {
+            const el = document.createElement('div');
+            el.className = note.type === 'hold' ? 'rhythm-game-note hold' : 'rhythm-game-note';
+            el.dataset.noteId = String(note.id);
+
+            if (note.type === 'hold') {
+                const holdPercent = Math.max(18, (note.duration / TRAVEL_TIME) * 100);
+                el.style.height = `${holdPercent}%`;
+            }
+
+            note.element = el;
+            laneRailElements[note.lane]?.appendChild(el);
+        }
+    }
+
+    function setJudgement(label, detail) {
+        judgementValue.textContent = label;
+        judgementDetail.textContent = detail;
+    }
+
+    function updateHud() {
+        scoreValue.textContent = String(score);
+        comboValue.textContent = String(combo);
+        progressValue.textContent = `${judgedCount} / ${notes.length}`;
+        const accuracy = judgedCount === 0
+            ? 100
+            : Math.round((totalAccuracyWeight / judgedCount) * 100);
+        accuracyValue.textContent = `${accuracy}%`;
+    }
+
+    function resetStats() {
+        score = 0;
+        combo = 0;
+        maxCombo = 0;
+        judgedCount = 0;
+        totalAccuracyWeight = 0;
+        timingOffsets = [];
+        perfectCount = 0;
+        goodCount = 0;
+        missCount = 0;
+        updateHud();
+    }
+
+    function setLaneHeld(laneIndex, held) {
+        const lane = laneElements[laneIndex];
+        if (!lane) return;
+        lane.classList.toggle('is-held', held);
+    }
+
+    function clearLaneFlashes() {
+        while (laneFlashTimers.length) {
+            clearTimeout(laneFlashTimers.pop());
+        }
+
+        for (const lane of laneElements) {
+            lane.classList.remove('is-hit', 'is-held');
+        }
+    }
+
+
+    function spawnHitBurst(laneIndex, strength = 'tap') {
+        const lane = laneElements[laneIndex];
+        if (!lane) return;
+
+        const burst = document.createElement('div');
+        burst.className = 'rg-hit-burst';
+
+        const count = strength === 'holdStart'
+            ? 14
+            : strength === 'hold'
+                ? 12
+                : 9;
+
+        for (let i = 0; i < count; i++) {
+            const particle = document.createElement('span');
+            particle.className = 'rg-hit-particle';
+
+            const angle = (Math.random() * Math.PI) - Math.PI; // upward fan
+            const speed = strength === 'hold'
+                ? 44 + Math.random() * 44
+                : 36 + Math.random() * 38;
+
+            const dx = Math.cos(angle) * speed * (0.55 + Math.random() * 0.55);
+            const dy = Math.sin(angle) * speed - (24 + Math.random() * 34);
+
+            const hue = 38 + Math.random() * 38;
+            const size = strength === 'holdStart'
+                ? 6 + Math.random() * 5
+                : 5 + Math.random() * 4;
+
+            const duration = strength === 'hold'
+                ? 620 + Math.floor(Math.random() * 220)
+                : 500 + Math.floor(Math.random() * 180);
+
+            const delay = Math.floor(Math.random() * 80);
+
+            particle.style.setProperty('--dx', `${dx.toFixed(1)}px`);
+            particle.style.setProperty('--dy', `${dy.toFixed(1)}px`);
+            particle.style.setProperty('--h', `${hue.toFixed(1)}`);
+            particle.style.setProperty('--s', `${size.toFixed(1)}px`);
+            particle.style.setProperty('--dur', `${duration}ms`);
+            particle.style.setProperty('--dly', `${delay}ms`);
+            particle.style.setProperty('--sc', `${(1.05 + Math.random() * 0.45).toFixed(2)}`);
+
+            burst.appendChild(particle);
+        }
+
+        lane.appendChild(burst);
+        window.setTimeout(() => {
+            burst.remove();
+        }, 980);
+    }
+
+    function startHoldSpray(laneIndex) {
+        if (holdSprayTimers.has(laneIndex)) return;
+        const timer = window.setInterval(() => {
+            spawnHitBurst(laneIndex, 'hold');
+        }, 120);
+        holdSprayTimers.set(laneIndex, timer);
+    }
+
+    function stopHoldSpray(laneIndex) {
+        const timer = holdSprayTimers.get(laneIndex);
+        if (timer) {
+            clearInterval(timer);
+        }
+        holdSprayTimers.delete(laneIndex);
+    }
+    function pulseLane(laneIndex, duration = 120) {
+        const lane = laneElements[laneIndex];
+        if (!lane) return;
+        lane.classList.add('is-hit');
+        const timer = window.setTimeout(() => {
+            lane.classList.remove('is-hit');
+        }, duration);
+        laneFlashTimers.push(timer);
+    }
+
+    function resetNoteState() {
+        buildNotes();
+        resetStats();
+        results.classList.remove('active');
+        panel.classList.remove('playing');
+        startButton.textContent = 'Start Run';
+        setJudgement('Ready', '等待第一輪開始。');
+        statusCopy.textContent = '按下 Start Run 後會先給一小段 lead-in，再開始落下第一批 note。';
+        sessionHint.textContent = '操作按鍵是 D F J K。這版除了短按，也加入了需要一路按住到尾端的 hold note。';
+        clearLaneFlashes();
+    }
+
+    function disposeInstrument() {
+        disposeLofiChain(rhythmLofiVibrato, rhythmLofiFilter);
+        if (rhythmInstrument && typeof rhythmInstrument.dispose === 'function') {
+            rhythmInstrument.dispose();
+        }
+        rhythmInstrument = null;
+        rhythmLofiVibrato = null;
+        rhythmLofiFilter = null;
+    }
+
+    async function ensureAudioTools() {
+        await initAudio();
+
+        if (!rhythmInstrument) {
+            const created = await createInstrumentInstance('chiptune_lead');
+            rhythmInstrument = created.instrument;
+            rhythmLofiVibrato = created.lofiVibrato;
+            rhythmLofiFilter = created.lofiFilter;
+        }
+
+        if (!metronomeSynth) {
+            metronomeSynth = new Tone.Synth({
+                oscillator: { type: 'triangle' },
+                envelope: {
+                    attack: 0.001,
+                    decay: 0.07,
+                    sustain: 0,
+                    release: 0.08
+                }
+            }).toDestination();
+            metronomeSynth.volume.value = -12;
+        }
+    }
+
+    function currentRunTime() {
+        return nowSeconds() - runStartAt;
+    }
+
+    function playLaneSound(laneIndex) {
+        if (!rhythmInstrument) return;
+        const midi = LANE_MIDIS[laneIndex] ?? 60;
+        const visualX = LANE_VISUAL_X[laneIndex] ?? 0;
+        playVisualFeedback('user', midi, visualX, -1.9);
+        playMidiWithInstrument(rhythmInstrument, 'chiptune_lead', midi);
+    }
+
+    function playMetronomeBeat(beatIndex) {
+        if (!metronomeEnabled || !metronomeSynth) return;
+        const isAccent = beatIndex % 4 === 0;
+        metronomeSynth.triggerAttackRelease(
+            isAccent ? METRONOME_PITCH.accent : METRONOME_PITCH.regular,
+            0.06
+        );
+    }
+
+    function recordFinalResult(note, bucket, label, detail, scoreDelta, accuracyWeight, offsetSeconds = null) {
+        note.state = bucket === 'miss' ? 'miss' : 'hit';
+        judgedCount += 1;
+        totalAccuracyWeight += accuracyWeight;
+
+        if (bucket === 'perfect') {
+            perfectCount += 1;
+        } else if (bucket === 'good') {
+            goodCount += 1;
+        } else {
+            missCount += 1;
+        }
+
+        if (bucket === 'miss') {
+            combo = 0;
+        } else {
+            combo += 1;
+            maxCombo = Math.max(maxCombo, combo);
+            score += scoreDelta;
+            if (typeof offsetSeconds === 'number') {
+                timingOffsets.push(offsetSeconds);
+            }
+            playLaneSound(note.lane);
+            spawnHitBurst(note.lane, note.type === 'hold' ? 'hold' : 'tap');
+            pulseLane(note.lane, note.type === 'hold' ? 180 : 120);
+        }
+
+        if (note.type === 'hold') {
+            stopHoldSpray(note.lane);
+            activeHoldNotes.delete(note.lane);
+            setLaneHeld(note.lane, false);
+        }
+
+        if (note.element) {
+            note.element.classList.remove('is-visible', 'is-holding');
+            note.element.classList.add(bucket === 'miss' ? 'is-miss' : 'is-hit');
+            const elementRef = note.element;
+            window.setTimeout(() => {
+                if (elementRef && elementRef.isConnected) {
+                    elementRef.remove();
+                }
+            }, 720);
+            note.element = null;
+        }
+
+        setJudgement(label, detail);
+        updateHud();
+    }
+
+    function finalizeTap(note, deltaSeconds) {
+        const bucket = getJudgeBucket(deltaSeconds);
+        const reward = getTapReward(bucket);
+        const detail = bucket === 'miss'
+            ? `偏差 ${Math.round(deltaSeconds * 1000)}ms`
+            : `命中偏差 ${Math.round(deltaSeconds * 1000)}ms`;
+        recordFinalResult(note, bucket, reward.label, detail, reward.score, reward.weight, deltaSeconds);
+    }
+
+    function startHold(note, deltaSeconds) {
+        const bucket = getJudgeBucket(deltaSeconds);
+        if (bucket === 'miss') {
+            recordFinalResult(note, 'miss', 'Hold Miss', `起點偏差 ${Math.round(deltaSeconds * 1000)}ms`, 0, 0, deltaSeconds);
+            return;
+        }
+
+        note.state = 'holding';
+        note.keyHeld = true;
+        note.holdBucket = bucket;
+        note.holdStartedAt = currentRunTime();
+        activeHoldNotes.set(note.lane, note);
+        setLaneHeld(note.lane, true);
+        pulseLane(note.lane, 180);
+        playLaneSound(note.lane);
+
+        if (note.element) {
+            note.element.classList.add('is-holding', 'is-visible');
+        }
+
+        spawnHitBurst(note.lane, 'holdStart');
+        startHoldSpray(note.lane);
+
+        const startLabel = bucket === 'perfect' ? 'Hold Start' : 'Hold Start';
+        setJudgement(startLabel, `按住到尾端，長度 ${Math.round(note.duration * 1000)}ms`);
+    }
+
+    function completeHold(note, releaseOffset = 0, autoCompleted = false) {
+        const bucket = note.holdBucket ?? 'good';
+        const reward = getHoldReward(bucket);
+        const detail = autoCompleted
+            ? `長按完成，尾端穩定接住了。`
+            : `尾端偏差 ${Math.round(releaseOffset * 1000)}ms`;
+        recordFinalResult(note, bucket, reward.label, detail, reward.score, reward.weight, note.holdStartedAt !== null ? note.holdStartedAt - note.time : 0);
+    }
+
+    function failHoldRelease(note, runTime) {
+        const earlyMs = Math.max(0, Math.round((note.endTime - runTime) * 1000));
+        recordFinalResult(note, 'miss', 'Hold Break', `太早放開，提早了 ${earlyMs}ms`, 0, 0, runTime - note.time);
+    }
+    function processAutoMisses(runTime) {
+        for (const note of notes) {
+            if (note.state === 'pending' && runTime - note.time > JUDGE_WINDOWS.miss) {
+                if (note.type === 'hold') {
+                    recordFinalResult(note, 'miss', 'Hold Miss', `沒有按到 hold 起點`, 0, 0, runTime - note.time);
+                } else {
+                    finalizeTap(note, runTime - note.time);
+                }
+                continue;
+            }
+
+            // If a hold has been started, it should resolve at its tail timing (not linger at the bottom).
+            if (note.state === 'holding' && runTime >= note.endTime) {
+                completeHold(note, 0, true);
+                continue;
+            }
+
+            // Failsafe: if a hold somehow stays "holding" past its tail for too long, mark it as miss and remove.
+            if (note.state === 'holding' && runTime - note.endTime > JUDGE_WINDOWS.miss) {
+                recordFinalResult(note, 'miss', 'Hold Miss', `沒有按住到尾端`, 0, 0, runTime - note.time);
+            }
+        }
+    }
+
+    function updateNotePositions(runTime) {
+        for (const note of notes) {
+            if (!note.element) continue;
+            if (note.state === 'hit' || note.state === 'miss') continue;
+
+            const timeUntilHit = note.time - runTime;
+            const progress = 1 - (timeUntilHit / TRAVEL_TIME);
+            const bottomPercent = (1 - progress) * 100;
+            const holdExtra = note.type === 'hold' ? (note.duration / TRAVEL_TIME) * 100 : 0;
+            const visible = progress >= -0.08 && bottomPercent >= -(holdExtra + 18) && bottomPercent <= 118;
+
+            note.element.classList.toggle('is-visible', visible || note.state === 'holding');
+
+            if (note.type === 'hold' && note.state === 'holding') {
+                // Mania-style hold: once the head is caught, keep it pinned to the judgement line and shrink the tail.
+                const remaining = Math.max(0, note.endTime - runTime);
+                const remainingPercent = (remaining / TRAVEL_TIME) * 100;
+                note.element.style.bottom = `0%`;
+                note.element.style.height = `${Math.max(0, remainingPercent)}%`;
+            } else {
+                note.element.style.bottom = `${bottomPercent}%`;
+                // Ensure the hold returns to its original height if it was previously shrunk.
+                if (note.type === 'hold') {
+                    const fullPercent = Math.max(18, (note.duration / TRAVEL_TIME) * 100);
+                    note.element.style.height = `${fullPercent}%`;
+                }
+            }
+        }
+    }
+
+
+    function step() {
+        animationFrameId = window.requestAnimationFrame(step);
+
+        if (!isActive || !isRunning) return;
+
+        const runTime = currentRunTime();
+        const beatClock = runTime + LEAD_IN;
+
+        if (beatClock >= 0) {
+            const beatIndex = Math.floor(beatClock / beatDuration);
+            if (beatIndex !== lastBeatIndex) {
+                lastBeatIndex = beatIndex;
+                playMetronomeBeat(beatIndex);
+            }
+        }
+
+        updateNotePositions(runTime);
+        if (runTime >= 0) {
+            processAutoMisses(runTime);
+        }
+
+        if (judgedCount === notes.length && runTime > chartDuration + 0.8) {
+            finishRun();
+        }
+    }
+
+    function startLoop() {
+        if (animationFrameId !== null) return;
+        animationFrameId = window.requestAnimationFrame(step);
+    }
+
+    function stopLoop() {
+        if (animationFrameId !== null) {
+            window.cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+        }
+    }
+
+    async function startRun() {
+        await ensureAudioTools();
+        resetNoteState();
+        isRunning = true;
+        panel.classList.add('playing');
+        results.classList.remove('active');
+        startButton.textContent = 'Running...';
+        runStartAt = nowSeconds() + LEAD_IN;
+        lastBeatIndex = -1;
+        statusCopy.textContent = `${chart.title} 已載入。這輪除了 tap，也有幾顆 hold note 會混進來。`;
+        setJudgement('Lead In', '節拍器會先帶你進拍。');
+        sessionHint.textContent = 'tap 是短按，hold 要從起點接住後一路按到尾端。這樣比較接近真正節奏遊戲的手感。';
+        updateHud();
+        startLoop();
+    }
+
+    function resetRun() {
+        isRunning = false;
+        lastBeatIndex = -1;
+        for (const timer of holdSprayTimers.values()) { clearInterval(timer); }
+        holdSprayTimers.clear();
+        activeHoldNotes.clear();
+        resetNoteState();
+    }
+
+    function activate() {
+        isActive = true;
+        startLoop();
+    }
+
+    function deactivate() {
+        isActive = false;
+        isRunning = false;
+        lastBeatIndex = -1;
+        for (const timer of holdSprayTimers.values()) { clearInterval(timer); }
+        holdSprayTimers.clear();
+        activeHoldNotes.clear();
+        panel.classList.remove('playing');
+        clearLaneFlashes();
+        stopLoop();
+    }
+
+    function pickCandidate(laneIndex, runTime) {
+        let candidate = null;
+        let candidateDelta = Infinity;
+
+        for (const note of notes) {
+            if (note.lane !== laneIndex || note.state !== 'pending') continue;
+            const delta = runTime - note.time;
+            const absDelta = Math.abs(delta);
+
+            if (absDelta > JUDGE_WINDOWS.miss) continue;
+            if (absDelta < candidateDelta) {
+                candidate = note;
+                candidateDelta = absDelta;
+            }
+        }
+
+        return candidate;
+    }
+
+    function handleKeyDown(event) {
+        const key = event.key.toLowerCase();
+        const laneIndex = LANE_KEYS.indexOf(key);
+        if (laneIndex === -1) return false;
+
+        event.preventDefault();
+        if (!isActive) return true;
+        if (event.repeat) return true;
+
+        spawnHitBurst(laneIndex, 'input');
+
+        if (!isRunning) {
+            pulseLane(laneIndex);
+            setJudgement('Idle', '先按 Start Run 再開始判定。');
+            return true;
+        }
+
+        if (activeHoldNotes.has(laneIndex)) {
+            return true;
+        }
+
+        const runTime = currentRunTime();
+        if (runTime < -0.08) {
+            pulseLane(laneIndex);
+            setJudgement('Too Soon', '還在 lead-in，等第一拍落下再按。');
+            return true;
+        }
+
+        const candidate = pickCandidate(laneIndex, runTime);
+        if (!candidate) {
+            combo = 0;
+            updateHud();
+            pulseLane(laneIndex);
+            setJudgement('Empty', '這個 lane 現在沒有可判定的 note。');
+            return true;
+        }
+
+        if (candidate.type === 'hold') {
+            startHold(candidate, runTime - candidate.time);
+        } else {
+            finalizeTap(candidate, runTime - candidate.time);
+        }
+        return true;
+    }
+
+    function handleKeyUp(event) {
+        const key = event.key.toLowerCase();
+        const laneIndex = LANE_KEYS.indexOf(key);
+        if (laneIndex === -1) return false;
+
+        event.preventDefault();
+        if (!isActive || !isRunning) return true;
+
+        const activeHold = activeHoldNotes.get(laneIndex);
+        if (!activeHold) {
+            return true;
+        }
+
+        stopHoldSpray(laneIndex);
+
+        activeHold.keyHeld = false;
+        setLaneHeld(laneIndex, false);
+
+        const runTime = currentRunTime();
+        const releaseOffset = runTime - activeHold.endTime;
+        if (releaseOffset >= -JUDGE_WINDOWS.good) {
+            completeHold(activeHold, releaseOffset, false);
+        } else {
+            failHoldRelease(activeHold, runTime);
+        }
+
+        return true;
+    }
+
+    function finishRun() {
+        isRunning = false;
+        panel.classList.remove('playing');
+        startButton.textContent = 'Start Again';
+        // Defensive cleanup: ensure no hold glow/bar stays stuck after the run completes.
+        for (const timer of holdSprayTimers.values()) {
+            clearInterval(timer);
+        }
+        holdSprayTimers.clear();
+        activeHoldNotes.clear();
+        clearLaneFlashes();
+        window.setTimeout(() => {
+            for (const rail of laneRailElements) {
+                if (!rail) continue;
+                for (const node of Array.from(rail.querySelectorAll('.rhythm-game-note, .rg-hit-burst'))) {
+                    node.remove();
+                }
+            }
+        }, 120);
+        const accuracy = judgedCount === 0 ? 0 : Math.round((totalAccuracyWeight / judgedCount) * 100);
+        const averageOffsetMs = timingOffsets.length === 0
+            ? 0
+            : Math.round((timingOffsets.reduce((sum, offset) => sum + offset, 0) / timingOffsets.length) * 1000);
+        const biasLabel = averageOffsetMs === 0
+            ? 'Centered'
+            : averageOffsetMs < 0
+                ? `Early ${Math.abs(averageOffsetMs)}ms`
+                : `Late ${averageOffsetMs}ms`;
+        const grade = accuracy >= 92
+            ? 'A'
+            : accuracy >= 82
+                ? 'B'
+                : accuracy >= 70
+                    ? 'C'
+                    : 'D';
+
+        resultGrade.textContent = grade;
+        resultBias.textContent = biasLabel;
+        resultCombo.textContent = String(maxCombo);
+        results.classList.add('active');
+        setJudgement('Complete', `Perfect ${perfectCount} / Good ${goodCount} / Miss ${missCount}`);
+        statusCopy.textContent = `這輪結束了。現在你可以一起感受 tap 與 hold 的節奏壓力，再決定判定窗和 note speed 要怎麼修。`;
+        sessionHint.textContent = '如果 hold 常常斷掉，我們下一步可以調尾端容錯、長條可讀性，或是把 hold 的收尾提示做得更明顯。';
+    }
+
+    function bindControls() {
+        startButton.addEventListener('click', () => {
+            startRun().catch((err) => {
+                console.error('Rhythm game start failed:', err);
+                setJudgement('Audio Error', '音訊初始化失敗，請確認瀏覽器允許播放音效。');
+            });
+        });
+
+        restartButton.addEventListener('click', () => {
+            if (!isRunning) {
+                resetRun();
+                return;
+            }
+
+            startRun().catch((err) => {
+                console.error('Rhythm game restart failed:', err);
+            });
+        });
+
+        metronomeButton.addEventListener('click', () => {
+            metronomeEnabled = !metronomeEnabled;
+            metronomeButton.textContent = metronomeEnabled ? 'Metronome On' : 'Metronome Off';
+            metronomeButton.classList.toggle('is-active', metronomeEnabled);
+            setJudgement(
+                metronomeEnabled ? 'Guide On' : 'Guide Off',
+                metronomeEnabled ? '節拍器已開啟，這輪更適合觀察 timing 偏差。' : '節拍器已關閉，現在可以專心測純視覺讀譜。'
+            );
+        });
+    }
+
+    buildNotes();
+    bindControls();
+    resetRun();
+
+    return {
+        activate,
+        deactivate,
+        disposeInstrument,
+        handleKeyDown,
+        handleKeyUp,
+        reset: resetRun
     };
 }
