@@ -40,6 +40,7 @@ import {
     SCALE_KEY_MAP
 } from './core/config.js';
 import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
+import { createRhythmGameModule } from './modes/rhythm-game/index.js';
 
 // =========================================================
 // 1. 音源設定
@@ -710,6 +711,13 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
                 absolutePitch.resetIntro();
             }
 
+            if (isRhythmGame) {
+                rhythmGame.activate();
+            } else {
+                rhythmGame.reset();
+                rhythmGame.deactivate();
+            }
+
             if (isHome) {
                 resetModeTransitionState();
             }
@@ -870,6 +878,15 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
 
         const absolutePitch = createAbsolutePitchModule({
             container: absolutePitchUi,
+            createInstrumentInstance,
+            disposeLofiChain,
+            initAudio,
+            nowSeconds,
+            playMidiWithInstrument,
+            playVisualFeedback
+        });
+        const rhythmGame = createRhythmGameModule({
+            container: rhythmGameUi,
             createInstrumentInstance,
             disposeLofiChain,
             initAudio,
@@ -2495,6 +2512,12 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
         // 10. 鍵盤互動
         // =========================================================
         window.addEventListener('keydown', async (e) => {
+            if (currentScreen === 'rhythm-game') {
+                if (rhythmGame && rhythmGame.handleKeyDown(e)) {
+                    return;
+                }
+            }
+
             if (!isInteractivePlayback()) {
                 if (currentScreen === 'home' && e.key === 'Enter') {
                     transitionFromHome(freePlayCard, 'free-play');
@@ -2531,6 +2554,12 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
         });
 
         window.addEventListener('keyup', (e) => {
+            if (currentScreen === 'rhythm-game') {
+                if (rhythmGame && rhythmGame.handleKeyUp(e)) {
+                    return;
+                }
+            }
+
             if (!isInteractivePlayback()) return;
 
             const key = e.key.toLowerCase();
