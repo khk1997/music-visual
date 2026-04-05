@@ -734,6 +734,7 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
             bottomUi.classList.toggle('hidden', !isFreePlay || isFreePlayThemeSelection);
             absolutePitchUi.classList.toggle('active', isAbsolutePitch);
             rhythmGameUi.classList.toggle('active', isRhythmGame);
+            document.querySelector('.rhythm-game-leaderboard')?.classList.toggle('is-visible', isRhythmGame);
             backgroundToggleButton.classList.toggle('ui-hidden', !isFreePlay || isFreePlayThemeSelection);
             recordToggleButton.classList.toggle('ui-hidden', !isFreePlay || isFreePlayThemeSelection);
             playbackToggleButton.classList.toggle('ui-hidden', !isFreePlay || isFreePlayThemeSelection);

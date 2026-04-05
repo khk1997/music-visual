@@ -95,11 +95,12 @@ export function createRhythmGameModule({
 }) {
     const panel = container;
     const startButton = document.getElementById('rg-start-button');
-    const restartButton = document.getElementById('rg-restart-button');
-    const retryButton = document.getElementById('rg-retry-button');
     const scoreValue = document.getElementById('rg-score-value');
     const comboValue = document.getElementById('rg-combo-value');
     const accuracyValue = document.getElementById('rg-result-accuracy');
+    const perfectValue = document.getElementById('rg-perfect-count');
+    const goodValue = document.getElementById('rg-good-count');
+    const missValue = document.getElementById('rg-miss-count');
     const progressValue = document.getElementById('rg-progress-value');
     const progressFill = document.getElementById('rhythm-progress-fill');
     const progressText = document.getElementById('rhythm-progress-text');
@@ -111,6 +112,8 @@ export function createRhythmGameModule({
     const resultGrade = document.getElementById('rg-result-grade');
     const resultBias = document.getElementById('rg-result-bias');
     const resultCombo = document.getElementById('rg-result-combo');
+    const leaderboardList = document.getElementById('rg-leaderboard-list');
+    const playerIdInput = document.getElementById('rg-player-id-input');
     const laneElements = Array.from(container.querySelectorAll('.rhythm-game-lane'));
     const laneRailElements = laneElements.map((lane) => lane.querySelector('.rhythm-game-lane-rail'));
 
@@ -138,6 +141,200 @@ export function createRhythmGameModule({
     let missCount = 0;
     const activeHoldNotes = new Map();
     const holdSprayTimers = new Map();
+    const LEADERBOARD_LIMIT = 10;
+    const LEADERBOARD_STORAGE_KEY = 'visual-music-game.rhythm.leaderboard.v1';
+    const PLAYER_ID_STORAGE_KEY = 'visual-music-game.rhythm.player-id.v1';
+    let playerId = 'Guest';
+    let leaderboardEntries = [];
+
+    function readStoredJson(storageKey, fallbackValue) {
+        try {
+            const raw = window.localStorage.getItem(storageKey);
+            if (!raw) return fallbackValue;
+            return JSON.parse(raw);
+        } catch {
+            return fallbackValue;
+        }
+    }
+
+    function writeStoredJson(storageKey, value) {
+        try {
+            window.localStorage.setItem(storageKey, JSON.stringify(value));
+        } catch {
+            // Local storage can be unavailable in private mode; the leaderboard still works in-memory.
+        }
+    }
+
+    function normalizePlayerId(value) {
+        if (typeof value !== 'string') return '';
+        return value.replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, 16);
+    }
+
+    function loadPlayerId() {
+        const storedId = readStoredJson(PLAYER_ID_STORAGE_KEY, null);
+        const nextId = normalizePlayerId(typeof storedId === 'string' ? storedId : '');
+        const resolvedId = nextId || 'Guest';
+        writeStoredJson(PLAYER_ID_STORAGE_KEY, resolvedId);
+        if (playerIdInput) {
+            playerIdInput.value = resolvedId;
+        }
+        return resolvedId;
+    }
+
+    function savePlayerId(value) {
+        const nextId = normalizePlayerId(value);
+        playerId = nextId || 'Guest';
+        writeStoredJson(PLAYER_ID_STORAGE_KEY, playerId);
+        return playerId;
+    }
+
+    function normalizeLeaderboardEntry(entry) {
+        return {
+            playerId: entry && typeof entry.playerId === 'string' && entry.playerId.trim() ? entry.playerId.trim() : 'Guest',
+            score: entry && Number.isFinite(entry.score) ? entry.score : 0,
+            result: entry && typeof entry.result === 'string' && entry.result.trim() ? entry.result.trim() : '-',
+            createdAt: entry && Number.isFinite(entry.createdAt) ? entry.createdAt : Date.now()
+        };
+    }
+
+    function compareLeaderboardEntries(a, b) {
+        return b.score - a.score || b.createdAt - a.createdAt;
+    }
+
+    function loadLeaderboardEntries() {
+        const storedEntries = readStoredJson(LEADERBOARD_STORAGE_KEY, []);
+        if (!Array.isArray(storedEntries)) {
+            return [];
+        }
+
+        return storedEntries
+            .map(normalizeLeaderboardEntry)
+            .sort(compareLeaderboardEntries)
+            .slice(0, LEADERBOARD_LIMIT);
+    }
+
+    function renderLeaderboardEntries() {
+        if (!leaderboardList) return;
+
+        if (leaderboardEntries.length === 0) {
+            leaderboardList.replaceChildren();
+            const emptyRow = document.createElement('div');
+            emptyRow.className = 'rhythm-game-leaderboard-row is-empty';
+
+            const emptyRank = document.createElement('span');
+            emptyRank.className = 'rhythm-game-leaderboard-rank';
+            emptyRank.textContent = '-';
+
+            const emptyId = document.createElement('span');
+            emptyId.textContent = 'No scores yet';
+
+            const emptyScore = document.createElement('span');
+            emptyScore.textContent = '-';
+
+            const emptyResult = document.createElement('span');
+            emptyResult.textContent = '-';
+
+            emptyRow.append(emptyRank, emptyId, emptyScore, emptyResult);
+            leaderboardList.append(emptyRow);
+            return;
+        }
+
+        const rows = leaderboardEntries.map((entry, index) => {
+            const rankNumber = index + 1;
+            const row = document.createElement('div');
+            row.className = 'rhythm-game-leaderboard-row';
+            if (rankNumber <= 3) {
+                row.classList.add(`is-rank-${rankNumber}`);
+            }
+
+            const rankCell = document.createElement('span');
+            rankCell.className = 'rhythm-game-leaderboard-rank';
+            rankCell.textContent = `#${rankNumber}`;
+
+            const idCell = document.createElement('span');
+            idCell.className = 'rhythm-game-leaderboard-id';
+            idCell.textContent = entry.playerId;
+            idCell.title = entry.playerId;
+
+            const scoreCell = document.createElement('span');
+            scoreCell.className = 'rhythm-game-leaderboard-score';
+            scoreCell.textContent = entry.score.toLocaleString();
+
+            const resultCell = document.createElement('span');
+            resultCell.className = 'rhythm-game-leaderboard-result';
+            resultCell.textContent = entry.result;
+
+            row.append(rankCell, idCell, scoreCell, resultCell);
+            return row;
+        });
+
+        leaderboardList.replaceChildren(...rows);
+    }
+
+    function recordLeaderboardEntry(scoreValue, resultValue) {
+        const nextEntry = normalizeLeaderboardEntry({
+            playerId,
+            score: scoreValue,
+            result: resultValue,
+            createdAt: Date.now()
+        });
+
+        leaderboardEntries = [nextEntry, ...leaderboardEntries]
+            .sort(compareLeaderboardEntries)
+            .slice(0, LEADERBOARD_LIMIT);
+
+        writeStoredJson(LEADERBOARD_STORAGE_KEY, leaderboardEntries);
+        renderLeaderboardEntries();
+    }
+
+    function focusPlayerIdInput(selectAll = false) {
+        if (!playerIdInput) return;
+
+        playerIdInput.focus();
+        if (selectAll && typeof playerIdInput.select === 'function') {
+            playerIdInput.select();
+        }
+    }
+
+    function isTypingInTextField(event) {
+        const target = event?.target;
+        if (!target || !(target instanceof HTMLElement)) {
+            return false;
+        }
+
+        if (target === playerIdInput) {
+            return true;
+        }
+
+        if (target.isContentEditable) {
+            return true;
+        }
+
+        const tagName = target.tagName;
+        return tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
+    }
+
+    if (playerIdInput) {
+        playerIdInput.addEventListener('input', () => {
+            savePlayerId(playerIdInput.value);
+        });
+
+        playerIdInput.addEventListener('blur', () => {
+            playerIdInput.value = savePlayerId(playerIdInput.value);
+        });
+
+        playerIdInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                playerIdInput.value = savePlayerId(playerIdInput.value);
+                playerIdInput.blur();
+            }
+        });
+    }
+
+    playerId = loadPlayerId();
+    leaderboardEntries = loadLeaderboardEntries();
+    renderLeaderboardEntries();
 
     function buildNotes() {
         notes = chart.notes.map((note, index) => ({
@@ -188,6 +385,9 @@ export function createRhythmGameModule({
             ? 100
             : Math.round((totalAccuracyWeight / judgedCount) * 100);
         accuracyValue.textContent = `${accuracy}%`;
+        if (perfectValue) perfectValue.textContent = String(perfectCount);
+        if (goodValue) goodValue.textContent = String(goodCount);
+        if (missValue) missValue.textContent = String(missCount);
     }
 
     function updateProgressBar(runTime) {
@@ -656,6 +856,8 @@ export function createRhythmGameModule({
         const laneIndex = LANE_KEYS.indexOf(key);
         if (laneIndex === -1) return false;
 
+        if (isTypingInTextField(event)) return false;
+
         event.preventDefault();
         if (!isActive) return true;
         if (event.repeat) return true;
@@ -701,6 +903,8 @@ export function createRhythmGameModule({
         const laneIndex = LANE_KEYS.indexOf(key);
         if (laneIndex === -1) return false;
 
+        if (isTypingInTextField(event)) return false;
+
         event.preventDefault();
         if (!isActive || !isRunning) return true;
 
@@ -729,7 +933,7 @@ export function createRhythmGameModule({
         isRunning = false;
         panel.classList.remove('playing');
         panel.classList.add('finished');
-        startButton.textContent = 'Start Again';
+        startButton.textContent = 'Retry';
         // Defensive cleanup: ensure no hold glow/bar stays stuck after the run completes.
         for (const timer of holdSprayTimers.values()) {
             clearInterval(timer);
@@ -766,6 +970,7 @@ export function createRhythmGameModule({
         resultGrade.textContent = grade;
         resultBias.textContent = biasLabel;
         resultCombo.textContent = String(maxCombo);
+        recordLeaderboardEntry(score, grade);
         results.classList.add('active');
         setJudgement('Complete', `Perfect ${perfectCount} / Good ${goodCount} / Miss ${missCount}`);
         statusCopy.textContent = `這輪結束了。現在你可以一起感受 tap 與 hold 的節奏壓力，再決定判定窗和 note speed 要怎麼修。`;
@@ -774,40 +979,17 @@ export function createRhythmGameModule({
 
     function bindControls() {
         startButton.addEventListener('click', () => {
+            if (isRunning) return;
             startRun().catch((err) => {
                 console.error('Rhythm game start failed:', err);
                 setJudgement('Audio Error', '音訊初始化失敗，請確認瀏覽器允許播放音效。');
             });
         });
-
-        restartButton.addEventListener('click', () => {
-            if (!isRunning) {
-                resetRun();
-                return;
-            }
-
-            startRun().catch((err) => {
-                console.error('Rhythm game restart failed:', err);
-            });
-        });
-
-        if (retryButton) {
-            retryButton.addEventListener('click', () => {
-                if (!isRunning) {
-                    resetRun();
-                    scheduleAutoStart();
-                    return;
-                }
-
-                startRun().catch((err) => {
-                    console.error('Rhythm game restart failed:', err);
-                });
-            });
-        }
     }
 
     buildNotes();
     bindControls();
+    renderLeaderboardEntries();
     resetRun();
 
     return {
@@ -819,3 +1001,4 @@ export function createRhythmGameModule({
         reset: resetRun
     };
 }
+
