@@ -1798,6 +1798,78 @@
             content: none;
         }
 
+        .rhythm-game-judgement-layer {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding-top: clamp(96px, 14vh, 156px);
+            z-index: 3;
+            pointer-events: none;
+        }
+
+        .rhythm-game-judgement-value {
+            position: relative;
+            padding: 0;
+            text-align: center;
+            transform: translateY(8px) scale(0.94);
+            opacity: 0;
+            filter: saturate(0.9) brightness(0.95);
+            transition:
+                opacity 0.14s ease,
+                transform 0.16s cubic-bezier(0.16, 1, 0.3, 1),
+                filter 0.16s ease;
+        }
+
+        .rhythm-game-judgement-value.is-visible {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            filter: saturate(1.08) brightness(1);
+        }
+
+        .rhythm-game-judgement-value {
+            color: hsla(var(--rg-judgement-hue, 200) 100% 76% / 1);
+            font-size: clamp(24px, 3.8vw, 46px);
+            font-weight: 800;
+            line-height: 0.95;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            text-shadow:
+                0 0 12px hsla(var(--rg-judgement-hue, 200) 100% 76% / 0.26),
+                0 0 28px hsla(var(--rg-judgement-hue, 200) 100% 76% / 0.22);
+            transform: translateY(-1px);
+        }
+
+        .rhythm-game-judgement-value.is-perfect {
+            --rg-judgement-hue: 46;
+        }
+
+        .rhythm-game-judgement-value.is-good {
+            --rg-judgement-hue: 178;
+        }
+
+        .rhythm-game-judgement-value.is-miss {
+            --rg-judgement-hue: 355;
+        }
+
+        .rhythm-game-judgement-value.is-warning {
+            --rg-judgement-hue: 28;
+        }
+
+        .rhythm-game-judgement-value.is-success {
+            --rg-judgement-hue: 142;
+        }
+
+        .rhythm-game-judgement-value.is-ready,
+        .rhythm-game-judgement-value.is-neutral {
+            --rg-judgement-hue: 205;
+        }
+
+        .rhythm-game-judgement-value.is-error {
+            --rg-judgement-hue: 352;
+        }
+
         .rhythm-game-stat-grid,
         .rhythm-game-controls,
         .rhythm-game-lanes,
@@ -3924,12 +3996,14 @@
                     </div>
                 </div>
 
+                <div class="rhythm-game-judgement-layer" aria-live="polite" aria-atomic="true">
+                    <div class="rhythm-game-judgement-value is-ready" id="rg-judgement-value">Ready</div>
+                </div>
+
                 <div id="rg-legacy-ui" hidden aria-hidden="true">
                     <div id="rg-accuracy-value"></div>
                     <div id="rg-progress-value"></div>
                     <div id="rg-status-copy"></div>
-                    <div id="rg-judgement-value"></div>
-                    <div id="rg-judgement-detail"></div>
                     <div id="rg-results"></div>
                     <div id="rg-result-bias"></div>
                     <div id="rg-result-combo"></div>

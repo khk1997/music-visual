@@ -11,6 +11,7 @@ const LEAD_IN = 1.6;
 const HOLD_VISUAL_GAP_PCT = 5;
 const NOTE_VISUAL_GAP_PCT = 4;
 const TAP_VISUAL_HEIGHT_PCT = 4;
+const JUDGEMENT_VISIBLE_MS = 680;
 
 function createDemoChart() {
     const entries = [
@@ -124,7 +125,6 @@ export function createRhythmGameModule({
     const progressText = document.getElementById('rhythm-progress-text');
     const statusCopy = document.getElementById('rg-status-copy');
     const judgementValue = document.getElementById('rg-judgement-value');
-    const judgementDetail = document.getElementById('rg-judgement-detail');
     const sessionHint = document.getElementById('rg-session-hint');
     const results = document.getElementById('rg-results');
     const resultGrade = document.getElementById('rg-result-grade');
@@ -174,6 +174,7 @@ export function createRhythmGameModule({
     let missCount = 0;
     const activeHoldNotes = new Map();
     const holdSprayTimers = new Map();
+    let judgementHideTimerId = null;
     let pendingFinishResult = null;
     let isFinishModalOpen = false;
     const LEADERBOARD_LIMIT = 10;
@@ -464,11 +465,54 @@ export function createRhythmGameModule({
         }
     }
 
-    function setJudgement(label, detail) {
-        judgementValue.textContent = label;
-        judgementDetail.textContent = detail;
+    function getJudgementVariant(label) {
+        const normalized = typeof label === 'string' ? label.toLowerCase() : '';
+
+        if (normalized.includes('perfect')) return 'is-perfect';
+        if (normalized.includes('good')) return 'is-good';
+        if (normalized.includes('miss')) return 'is-miss';
+        if (normalized.includes('uploaded')) return 'is-success';
+        if (normalized.includes('error')) return 'is-error';
+        if (normalized.includes('too soon') || normalized.includes('empty')) return 'is-warning';
+        if (normalized.includes('ready') || normalized.includes('lead in') || normalized.includes('idle') || normalized.includes('complete')) {
+            return 'is-neutral';
+        }
+
+        return 'is-neutral';
     }
 
+    function setJudgement(label, detail) {
+        if (!judgementValue) return;
+
+        judgementValue.textContent = label;
+
+        if (judgementHideTimerId !== null) {
+            window.clearTimeout(judgementHideTimerId);
+            judgementHideTimerId = null;
+        }
+
+        judgementValue.classList.remove(
+            'is-perfect',
+            'is-good',
+            'is-miss',
+            'is-warning',
+            'is-success',
+            'is-neutral',
+            'is-ready',
+            'is-error',
+            'is-visible'
+        );
+        judgementValue.classList.add(getJudgementVariant(label));
+
+        // Restart the transition so repeated taps still pop even when the same label repeats.
+        void judgementValue.offsetWidth;
+        judgementValue.classList.add('is-visible');
+
+        judgementHideTimerId = window.setTimeout(() => {
+            judgementValue.classList.remove('is-visible');
+            judgementHideTimerId = null;
+        }, JUDGEMENT_VISIBLE_MS);
+    }
     function getScoreTone(ratio) {
         const bands = [
             { min: 0.90, hue: 46, saturation: 98, lightness: 72, glow: 0.42, border: 0.28 },
@@ -813,10 +857,10 @@ export function createRhythmGameModule({
         closeFinishModal();
         panel.classList.remove('playing');
         startButton.textContent = 'Start Run';
-        setJudgement('Ready', '????????');
-        statusCopy.textContent = '?? Start Run ??????? lead-in????????? note?';
+        setJudgement('Ready', '等音符落到打擊線時，這裡會顯示判定。');
+        statusCopy.textContent = '按下 Start Run 後，節奏會先進入 lead-in，再開始掉 note。';
         if (sessionHint) {
-            sessionHint.textContent = '????? D F J K?????????????????????? hold note?';
+            sessionHint.textContent = '預設鍵位是 D F J K。tap 是短按，hold 要接住起點後一路按到尾端。';
         }
         clearLaneFlashes();
     }
@@ -954,8 +998,8 @@ export function createRhythmGameModule({
         spawnHitBurst(note.lane, 'holdStart');
         startHoldSpray(note.lane);
 
-        const startLabel = bucket === 'perfect' ? 'Hold Start' : 'Hold Start';
-        setJudgement(startLabel, `按住到尾端，長度 ${Math.round(note.duration * 1000)}ms`);
+        const startLabel = bucket === 'perfect' ? 'Perfect' : 'Good';
+        setJudgement(startLabel, `Hold Start · 按住到尾端，長度 ${Math.round(note.duration * 1000)}ms`);
     }
 
     function completeHold(note, releaseOffset = 0, autoCompleted = false) {
@@ -1312,6 +1356,11 @@ export function createRhythmGameModule({
         reset: resetRun
     };
 }
+
+
+
+
+
 
 
 
