@@ -12,6 +12,8 @@ const HOLD_VISUAL_GAP_PCT = 5;
 const NOTE_VISUAL_GAP_PCT = 4;
 const TAP_VISUAL_HEIGHT_PCT = 4;
 const JUDGEMENT_VISIBLE_MS = 680;
+const JUDGEMENT_PERFECT_REPLAY_GAP_MS = 240;
+const JUDGEMENT_OTHER_REPLAY_GAP_MS = 120;
 
 function createDemoChart() {
     const entries = [
@@ -175,6 +177,8 @@ export function createRhythmGameModule({
     const activeHoldNotes = new Map();
     const holdSprayTimers = new Map();
     let judgementHideTimerId = null;
+    let judgementReplayTimerId = null;
+    let judgementLastShownAt = 0;
     let pendingFinishResult = null;
     let isFinishModalOpen = false;
     const LEADERBOARD_LIMIT = 10;
@@ -439,6 +443,7 @@ export function createRhythmGameModule({
             keyHeld: false,
             holdBucket: null,
             holdStartedAt: null,
+            startMissed: false,
             releaseReason: null
         }));
 
@@ -491,27 +496,54 @@ export function createRhythmGameModule({
             judgementHideTimerId = null;
         }
 
-        judgementValue.classList.remove(
-            'is-perfect',
-            'is-good',
-            'is-miss',
-            'is-warning',
-            'is-success',
-            'is-neutral',
-            'is-ready',
-            'is-error',
-            'is-visible'
-        );
-        judgementValue.classList.add(getJudgementVariant(label));
+        if (judgementReplayTimerId !== null) {
+            window.clearTimeout(judgementReplayTimerId);
+            judgementReplayTimerId = null;
+        }
 
-        // Restart the transition so repeated taps still pop even when the same label repeats.
-        void judgementValue.offsetWidth;
-        judgementValue.classList.add('is-visible');
+        const variant = getJudgementVariant(label);
+        const now = performance.now();
+        const elapsed = now - judgementLastShownAt;
+        const replayGap = variant === 'is-perfect'
+            ? JUDGEMENT_PERFECT_REPLAY_GAP_MS
+            : JUDGEMENT_OTHER_REPLAY_GAP_MS;
+        const replayDelay = Math.max(0, replayGap - elapsed);
 
-        judgementHideTimerId = window.setTimeout(() => {
+        const showJudgement = () => {
+            judgementValue.classList.remove(
+                'is-perfect',
+                'is-good',
+                'is-miss',
+                'is-warning',
+                'is-success',
+                'is-neutral',
+                'is-ready',
+                'is-error',
+                'is-visible'
+            );
+            judgementValue.classList.add(variant);
+
+            // Restart the transition so repeated taps still pop even when the same label repeats.
+            void judgementValue.offsetWidth;
+            judgementValue.classList.add('is-visible');
+            judgementLastShownAt = performance.now();
+
+            judgementHideTimerId = window.setTimeout(() => {
+                judgementValue.classList.remove('is-visible');
+                judgementHideTimerId = null;
+            }, JUDGEMENT_VISIBLE_MS);
+        };
+
+        if (replayDelay > 0) {
             judgementValue.classList.remove('is-visible');
-            judgementHideTimerId = null;
-        }, JUDGEMENT_VISIBLE_MS);
+            judgementReplayTimerId = window.setTimeout(() => {
+                judgementReplayTimerId = null;
+                showJudgement();
+            }, replayDelay);
+            return;
+        }
+
+        showJudgement();
     }
     function getScoreTone(ratio) {
         const bands = [
@@ -857,7 +889,24 @@ export function createRhythmGameModule({
         closeFinishModal();
         panel.classList.remove('playing');
         startButton.textContent = 'Start Run';
-        setJudgement('Ready', '等音符落到打擊線時，這裡會顯示判定。');
+        if (judgementValue) {
+            if (judgementHideTimerId !== null) {
+                window.clearTimeout(judgementHideTimerId);
+                judgementHideTimerId = null;
+            }
+            if (judgementReplayTimerId !== null) {
+                window.clearTimeout(judgementReplayTimerId);
+                judgementReplayTimerId = null;
+            }
+            judgementLastShownAt = 0;
+            if (judgementReplayTimerId !== null) {
+                window.clearTimeout(judgementReplayTimerId);
+                judgementReplayTimerId = null;
+            }
+            judgementLastShownAt = 0;
+            judgementValue.textContent = '';
+            judgementValue.classList.remove('is-perfect','is-good','is-miss','is-warning','is-success','is-neutral','is-ready','is-error','is-visible');
+        }
         statusCopy.textContent = '按下 Start Run 後，節奏會先進入 lead-in，再開始掉 note。';
         if (sessionHint) {
             sessionHint.textContent = '預設鍵位是 D F J K。tap 是短按，hold 要接住起點後一路按到尾端。';
@@ -918,7 +967,7 @@ export function createRhythmGameModule({
     }
 
     function recordFinalResult(note, bucket, label, detail, scoreDelta, accuracyWeight, offsetSeconds = null) {
-        note.state = bucket === 'miss' ? 'miss' : 'hit';
+        note.state = bucket === 'miss' ? 'missed' : 'hit';
         judgedCount += 1;
         totalAccuracyWeight += accuracyWeight;
 
@@ -952,14 +1001,17 @@ export function createRhythmGameModule({
 
         if (note.element) {
             note.element.classList.remove('is-visible', 'is-holding');
+            note.element.classList.remove('is-start-miss');
             note.element.classList.add(bucket === 'miss' ? 'is-miss' : 'is-hit');
-            const elementRef = note.element;
-            window.setTimeout(() => {
-                if (elementRef && elementRef.isConnected) {
-                    elementRef.remove();
-                }
-            }, 720);
-            note.element = null;
+            if (bucket !== 'miss') {
+                const elementRef = note.element;
+                window.setTimeout(() => {
+                    if (elementRef && elementRef.isConnected) {
+                        elementRef.remove();
+                    }
+                }, 720);
+                note.element = null;
+            }
         }
 
         setJudgement(label, detail);
@@ -1017,10 +1069,21 @@ export function createRhythmGameModule({
     }
     function processAutoMisses(runTime) {
         for (const note of notes) {
-            if (note.state === 'pending' && runTime - note.time > JUDGE_WINDOWS.miss) {
+            if (note.state === 'pending') {
                 if (note.type === 'hold') {
-                    recordFinalResult(note, 'miss', 'Hold Miss', `沒有按到 hold 起點`, 0, 0, runTime - note.time);
-                } else {
+                    const holdStartMissWindow = note.time + JUDGE_WINDOWS.miss;
+                    if (!note.startMissed && runTime > holdStartMissWindow) {
+                        note.startMissed = true;
+                        if (note.element) {
+                            note.element.classList.add('is-start-miss');
+                        }
+                    }
+
+                    const holdMissWindow = note.endTime + JUDGE_WINDOWS.miss;
+                    if (runTime > holdMissWindow) {
+                        recordFinalResult(note, 'miss', 'Hold Miss', `沒有按到 hold 起點`, 0, 0, runTime - note.time);
+                    }
+                } else if (runTime - note.time > JUDGE_WINDOWS.miss) {
                     finalizeTap(note, runTime - note.time);
                 }
                 continue;
@@ -1038,7 +1101,6 @@ export function createRhythmGameModule({
             }
         }
     }
-
     function getVisualNoteHeightPercent(note, runTime) {
         if (note.type === 'hold') {
             if (note.state === 'holding') {
@@ -1057,7 +1119,7 @@ export function createRhythmGameModule({
 
         for (const note of notes) {
             if (!note.element) continue;
-            if (note.state === 'hit' || note.state === 'miss') continue;
+            if (note.state === 'hit') continue;
 
             const timeUntilHit = note.time - runTime;
             const progress = 1 - (timeUntilHit / TRAVEL_TIME);
@@ -1070,7 +1132,7 @@ export function createRhythmGameModule({
                 : Math.max(naturalBottomPercent, laneBottomLimit);
             const visible = progress >= -0.08 && visualBottomPercent >= -(holdExtra + 18) && visualBottomPercent <= 118;
 
-            note.element.classList.toggle('is-visible', visible || note.state === 'holding');
+            note.element.classList.toggle('is-visible', visible || note.state === 'holding' || note.state === 'missed');
 
             if (note.type === 'hold' && note.state === 'holding') {
                 note.element.style.bottom = `0%`;
@@ -1079,6 +1141,15 @@ export function createRhythmGameModule({
                 note.element.style.bottom = `${visualBottomPercent}%`;
                 if (note.type === 'hold') {
                     note.element.style.height = `${noteHeightPercent}%`;
+                }
+            }
+
+            if (note.state === 'missed') {
+                const missRemovalLimit = -(noteHeightPercent + 24);
+                if (visualBottomPercent <= missRemovalLimit) {
+                    note.element.remove();
+                    note.element = null;
+                    continue;
                 }
             }
 
@@ -1127,7 +1198,6 @@ export function createRhythmGameModule({
         startButton.textContent = 'Running...';
         runStartAt = nowSeconds() + LEAD_IN;
         statusCopy.textContent = `${chart.title} 已載入。這輪除了 tap，也有幾顆 hold note 會混進來。`;
-        setJudgement('Lead In', '先熟悉落點與判定節奏。');
         if (sessionHint) {
             sessionHint.textContent = 'tap 是短按，hold 要從起點接住後一路按到尾端。這樣比較接近真正節奏遊戲的手感。';
         }
@@ -1149,7 +1219,19 @@ export function createRhythmGameModule({
     function activate() {
         isActive = true;
         if (!isRunning) {
-            setJudgement('Ready', '先輸入 ID，再按 Start Run。');
+            if (judgementValue) {
+                if (judgementHideTimerId !== null) {
+                    window.clearTimeout(judgementHideTimerId);
+                    judgementHideTimerId = null;
+                }
+                if (judgementReplayTimerId !== null) {
+                    window.clearTimeout(judgementReplayTimerId);
+                    judgementReplayTimerId = null;
+                }
+                judgementLastShownAt = 0;
+                judgementValue.textContent = '';
+                judgementValue.classList.remove('is-perfect','is-good','is-miss','is-warning','is-success','is-neutral','is-ready','is-error','is-visible');
+            }
             if (playerIdInput && !playerId) {
                 focusPlayerIdInput(true);
             }
@@ -1356,6 +1438,13 @@ export function createRhythmGameModule({
         reset: resetRun
     };
 }
+
+
+
+
+
+
+
 
 
 

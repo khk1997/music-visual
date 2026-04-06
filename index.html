@@ -1844,6 +1844,12 @@
         .rhythm-game-judgement-value.is-perfect {
             --rg-judgement-hue: 46;
         }
+        .rhythm-game-judgement-value.is-perfect.is-visible {
+            transform: translateY(0) scale(1.08);
+            text-shadow:
+                0 0 16px hsla(var(--rg-judgement-hue, 200) 100% 76% / 0.34),
+                0 0 34px hsla(var(--rg-judgement-hue, 200) 100% 76% / 0.28);
+        }
 
         .rhythm-game-judgement-value.is-good {
             --rg-judgement-hue: 178;
@@ -2479,7 +2485,19 @@
             opacity: 1;
             background: linear-gradient(90deg, rgba(255, 113, 113, 0.96), rgba(255, 62, 62, 0.88));
             box-shadow: none;
-            animation: rhythm-note-miss-fade 0.62s ease-out forwards;
+        }
+
+        .rhythm-game-note.hold.is-start-miss {
+            opacity: 1;
+            background: linear-gradient(180deg, rgba(255, 132, 132, 0.94), rgba(214, 50, 50, 0.92));
+            box-shadow: none;
+            filter: saturate(1.05) brightness(0.98);
+            animation: none;
+        }
+
+        .rhythm-game-note.hold.is-start-miss::before {
+            background: linear-gradient(90deg, rgba(255, 160, 160, 0.96), rgba(255, 84, 84, 0.94));
+            box-shadow: none;
         }
 
         .rhythm-game-note.hold.is-miss {
@@ -3997,7 +4015,7 @@
                 </div>
 
                 <div class="rhythm-game-judgement-layer" aria-live="polite" aria-atomic="true">
-                    <div class="rhythm-game-judgement-value is-ready" id="rg-judgement-value">Ready</div>
+                    <div class="rhythm-game-judgement-value" id="rg-judgement-value"></div>
                 </div>
 
                 <div id="rg-legacy-ui" hidden aria-hidden="true">
@@ -4047,6 +4065,11 @@
     <script type="module" src="./src/main.js"></script>
 </body>
 </html>
+
+
+
+
+
 
 
 
