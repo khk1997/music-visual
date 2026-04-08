@@ -14,46 +14,244 @@ const TAP_VISUAL_HEIGHT_PCT = 4;
 const JUDGEMENT_VISIBLE_MS = 680;
 const JUDGEMENT_PERFECT_REPLAY_GAP_MS = 240;
 const JUDGEMENT_OTHER_REPLAY_GAP_MS = 120;
+const RHYTHM_TRACK_URL = new URL('../../../music/1-1.mp3', import.meta.url).href;
+const RHYTHM_TRACK_OFFSET_DEFAULT_SECONDS = -0.87;
+const RHYTHM_TRACK_OFFSET_MIN_SECONDS = -1.5;
+const RHYTHM_TRACK_OFFSET_MAX_SECONDS = 1.5;
+const RHYTHM_TRACK_OFFSET_STORAGE_KEY = 'visual-music-game.rhythm.track-offset.v1';
+const RHYTHM_TRACK_OFFSET_STEP_SECONDS = 0.02;
+let rhythmTrackOffsetSeconds = RHYTHM_TRACK_OFFSET_DEFAULT_SECONDS;
+let rhythmTrackDurationSeconds = 0;
+let rhythmAudibleWindow = { start: 0, end: 0 };
 
-function createDemoChart() {
-    const entries = [
-        { beat: 0, lane: 0 },
-        { beat: 1, lane: 1 },
-        { beat: 2, lane: 2 },
-        { beat: 3, lane: 3 },
-        { beat: 4, lane: 0, durationBeats: 2 },
-        { beat: 6.5, lane: 2 },
-        { beat: 7, lane: 1 },
-        { beat: 7.5, lane: 3 },
-        { beat: 8, lane: 0 },
-        { beat: 8.5, lane: 1 },
-        { beat: 9, lane: 2 },
-        { beat: 9.5, lane: 3 },
-        { beat: 10, lane: 1, durationBeats: 3 },
-        { beat: 10.5, lane: 3 },
-        { beat: 11, lane: 0 },
-        { beat: 11.5, lane: 2 },
-        { beat: 13.5, lane: 3 },
-        { beat: 14, lane: 0 },
-        { beat: 14.5, lane: 1 },
-        { beat: 15, lane: 2, durationBeats: 2 },
-        { beat: 15.5, lane: 3 },
-        { beat: 16, lane: 1 },
-        { beat: 16.5, lane: 0 },
-        { beat: 17, lane: 2 },
-        { beat: 17.5, lane: 3 }
+function createRhythmChart(trackDurationSeconds = 0) {
+    const bpm = 150;
+    const secondsPerBeat = 60 / bpm;
+    const safeDuration = Number.isFinite(trackDurationSeconds) && trackDurationSeconds > 0
+        ? trackDurationSeconds
+        : 48;
+    const totalBeats = Math.max(64, Math.ceil(safeDuration / secondsPerBeat));
+    const sectionLength = 8;
+    const sectionCount = Math.ceil(totalBeats / sectionLength);
+    const notes = [];
+    const templates = [
+        [
+            { beat: 0, lane: 0 },
+            { beat: 2, lane: 1 },
+            { beat: 4, lane: 0 },
+            { beat: 6, lane: 1 },
+            { beat: 7, lane: 3 }
+        ],
+        [
+            { beat: 0, lane: 1 },
+            { beat: 1, lane: 3 },
+            { beat: 2, lane: 2 },
+            { beat: 4, lane: 0, durationBeats: 1.25 },
+            { beat: 7, lane: 2 }
+        ],
+        [
+            { beat: 0, lane: 3 },
+            { beat: 1, lane: 1 },
+            { beat: 2.75, lane: 2 },
+            { beat: 4, lane: 1 },
+            { beat: 6, lane: 2 },
+            { beat: 7, lane: 1 }
+        ],
+        [
+            { beat: 0, lane: 0 },
+            { beat: 1.5, lane: 1 },
+            { beat: 3, lane: 0 },
+            { beat: 4, lane: 2, durationBeats: 1.5 },
+            { beat: 7, lane: 3 }
+        ],
+        [
+            { beat: 0, lane: 2 },
+            { beat: 1, lane: 3 },
+            { beat: 2.5, lane: 0 },
+            { beat: 4, lane: 1 },
+            { beat: 6, lane: 0 },
+            { beat: 7, lane: 2 }
+        ],
+        [
+            { beat: 0, lane: 1 },
+            { beat: 1.5, lane: 2 },
+            { beat: 3, lane: 1 },
+            { beat: 4.5, lane: 2 },
+            { beat: 6, lane: 1, durationBeats: 1.25 },
+            { beat: 7, lane: 3 }
+        ],
+        [
+            { beat: 0, lane: 3 },
+            { beat: 1, lane: 2 },
+            { beat: 3, lane: 3 },
+            { beat: 4, lane: 2 },
+            { beat: 6, lane: 3 },
+            { beat: 7, lane: 2 }
+        ],
+        [
+            { beat: 0, lane: 0 },
+            { beat: 1.5, lane: 2 },
+            { beat: 3, lane: 1 },
+            { beat: 4, lane: 0, durationBeats: 1.5 },
+            { beat: 7, lane: 1 }
+        ],
+        [
+            { beat: 0, lane: 1 },
+            { beat: 1, lane: 3 },
+            { beat: 2, lane: 1 },
+            { beat: 4, lane: 3 },
+            { beat: 6, lane: 1 },
+            { beat: 7, lane: 2 }
+        ]
     ];
 
+    const laneShiftTable = [0, 1, 3, 2, 0, 2, 1, 3];
+
+    for (let sectionIndex = 0; sectionIndex < sectionCount; sectionIndex += 1) {
+        const startBeat = sectionIndex * sectionLength;
+        const template = templates[sectionIndex % templates.length];
+        const laneShift = laneShiftTable[sectionIndex % laneShiftTable.length];
+        const mirror = sectionIndex % 3 === 2;
+
+        for (const entry of template) {
+            const beat = startBeat + entry.beat;
+            if (beat >= totalBeats) continue;
+
+            let lane = entry.lane;
+            if (mirror) {
+                lane = 3 - lane;
+            }
+            lane = (lane + laneShift) % 4;
+
+            notes.push({
+                beat,
+                lane,
+                durationBeats: entry.durationBeats ?? 0,
+                type: entry.durationBeats ? 'hold' : 'tap'
+            });
+        }
+
+        if (sectionIndex % 6 === 5) {
+            notes.push({
+                beat: startBeat + 4,
+                lane: (sectionIndex + 3) % 4,
+                durationBeats: 1.5,
+                type: 'hold'
+            });
+        }
+    }
+
+    notes.sort((a, b) => a.beat - b.beat || a.lane - b.lane);
+
     return {
-        bpm: 120,
-        title: 'Warmup Ladder + Hold Notes',
-        notes: entries.map((entry) => ({
-            lane: entry.lane,
-            time: entry.beat * 0.5,
-            duration: entry.durationBeats ? entry.durationBeats * 0.5 : 0,
-            type: entry.durationBeats ? 'hold' : 'tap'
-        }))
+        bpm,
+        offsetSeconds: rhythmTrackOffsetSeconds,
+        title: '1-1 Adventure Battle',
+        notes
     };
+}
+
+function getRhythmPlayerAudioBuffer(player) {
+    const buffer = player?.buffer;
+    if (!buffer) return null;
+
+    if (typeof buffer.get === 'function') {
+        try {
+            const resolved = buffer.get();
+            if (resolved && typeof resolved.getChannelData === 'function') {
+                return resolved;
+            }
+        } catch {
+            // Fall through to other access patterns.
+        }
+    }
+
+    if (buffer._buffer && typeof buffer._buffer.getChannelData === 'function') {
+        return buffer._buffer;
+    }
+
+    if (buffer.buffer && typeof buffer.buffer.getChannelData === 'function') {
+        return buffer.buffer;
+    }
+
+    return null;
+}
+
+function detectRhythmAudibleWindow(audioBuffer, fallbackDurationSeconds = 0) {
+    const duration = Number.isFinite(audioBuffer?.duration) && audioBuffer.duration > 0
+        ? audioBuffer.duration
+        : (Number.isFinite(fallbackDurationSeconds) && fallbackDurationSeconds > 0 ? fallbackDurationSeconds : 0);
+
+    if (!audioBuffer || typeof audioBuffer.getChannelData !== 'function' || duration <= 0) {
+        return { start: 0, end: duration };
+    }
+
+    const sampleRate = audioBuffer.sampleRate || 44100;
+    const channelCount = audioBuffer.numberOfChannels || 1;
+    const blockSize = 2048;
+    let firstActiveSample = null;
+    let lastActiveSample = null;
+
+    for (let blockStart = 0; blockStart < audioBuffer.length; blockStart += blockSize) {
+        const blockEnd = Math.min(audioBuffer.length, blockStart + blockSize);
+        let blockPeak = 0;
+
+        for (let channelIndex = 0; channelIndex < channelCount; channelIndex += 1) {
+            const channelData = audioBuffer.getChannelData(channelIndex);
+            for (let sampleIndex = blockStart; sampleIndex < blockEnd; sampleIndex += 1) {
+                const sample = Math.abs(channelData[sampleIndex] ?? 0);
+                if (sample > blockPeak) {
+                    blockPeak = sample;
+                    if (blockPeak >= 0.008) {
+                        break;
+                    }
+                }
+            }
+            if (blockPeak >= 0.008) break;
+        }
+
+        if (blockPeak >= 0.008) {
+            if (firstActiveSample === null) {
+                firstActiveSample = blockStart;
+            }
+            lastActiveSample = blockEnd;
+        }
+    }
+
+    if (firstActiveSample === null || lastActiveSample === null) {
+        return { start: 0, end: duration };
+    }
+
+    const start = Math.max(0, (firstActiveSample / sampleRate) - 0.18);
+    const end = Math.min(duration, (lastActiveSample / sampleRate) + 0.18);
+
+    if (end <= start) {
+        return { start: 0, end: duration };
+    }
+
+    return { start, end };
+}
+
+function shouldKeepRhythmNote(noteTime, noteDuration, noteType) {
+    const startSilence = Math.max(0, rhythmAudibleWindow.start ?? 0);
+    const endSilence = Math.max(0, (rhythmTrackDurationSeconds || 0) - (rhythmAudibleWindow.end ?? rhythmTrackDurationSeconds));
+    const hasStartSilence = startSilence > 0.18;
+    const hasEndSilence = endSilence > 0.18;
+
+    if (hasStartSilence && (noteTime - TRAVEL_TIME) < startSilence) {
+        return false;
+    }
+
+    if (hasEndSilence) {
+        const noteVisibleTail = noteType === 'hold'
+            ? noteTime + noteDuration + TRAVEL_TIME
+            : noteTime + TRAVEL_TIME;
+        if (noteVisibleTail > rhythmAudibleWindow.end) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 function getJudgeBucket(deltaSeconds) {
@@ -128,6 +326,15 @@ export function createRhythmGameModule({
     const statusCopy = document.getElementById('rg-status-copy');
     const judgementValue = document.getElementById('rg-judgement-value');
     const sessionHint = document.getElementById('rg-session-hint');
+    const timingOffsetValue = document.getElementById('rg-timing-offset-value');
+    const timingOffsetSlider = document.getElementById('rg-timing-offset-slider');
+    const timingOffsetMeter = document.getElementById('rg-timing-offset-meter');
+    const timingOffsetMarker = document.getElementById('rg-timing-offset-marker');
+    const timingOffsetNote = document.getElementById('rg-timing-offset-note');
+    const timingSyncNoteAnchor = document.getElementById('rg-sync-note-anchor');
+    const timingBiasValue = document.getElementById('rg-timing-bias-value');
+    const timingBiasMeter = document.getElementById('rg-timing-bias-meter');
+    const timingBiasMarker = document.getElementById('rg-timing-bias-marker');
     const results = document.getElementById('rg-results');
     const resultGrade = document.getElementById('rg-result-grade');
     const resultBias = document.getElementById('rg-result-bias');
@@ -148,9 +355,10 @@ export function createRhythmGameModule({
     const laneElements = Array.from(container.querySelectorAll('.rhythm-game-lane'));
     const laneRailElements = laneElements.map((lane) => lane.querySelector('.rhythm-game-lane-rail'));
 
-    const chart = createDemoChart();
-    const chartDuration = chart.notes.reduce((maxTime, note) => Math.max(maxTime, note.time + (note.duration ?? 0)), 0);
-    const maxPossibleScore = chart.notes.reduce((total, note) => {
+    let chart = createRhythmChart();
+    let chartSecondsPerBeat = 60 / chart.bpm;
+    let chartDuration = chart.notes.reduce((maxTime, note) => Math.max(maxTime, ((note.beat ?? 0) + (note.durationBeats ?? 0)) * chartSecondsPerBeat), 0);
+    let maxPossibleScore = chart.notes.reduce((total, note) => {
         const reward = note.type === 'hold' ? getHoldReward('perfect') : getTapReward('perfect');
         return total + reward.score;
     }, 0);
@@ -158,6 +366,8 @@ export function createRhythmGameModule({
     let rhythmInstrument = null;
     let rhythmLofiVibrato = null;
     let rhythmLofiFilter = null;
+    let rhythmTrackPlayer = null;
+    let rhythmTrackStartTime = null;
     let isActive = false;
     let isRunning = false;
     let runStartAt = 0;
@@ -204,6 +414,22 @@ export function createRhythmGameModule({
         } catch {
             // Local storage can be unavailable in private mode; the leaderboard still works in-memory.
         }
+    }
+
+    function loadRhythmTrackOffset() {
+        const storedOffset = readStoredJson(RHYTHM_TRACK_OFFSET_STORAGE_KEY, RHYTHM_TRACK_OFFSET_DEFAULT_SECONDS);
+        if (!Number.isFinite(storedOffset)) return RHYTHM_TRACK_OFFSET_DEFAULT_SECONDS;
+        return Math.max(RHYTHM_TRACK_OFFSET_MIN_SECONDS, Math.min(RHYTHM_TRACK_OFFSET_MAX_SECONDS, storedOffset));
+    }
+
+    function saveRhythmTrackOffset(value) {
+        rhythmTrackOffsetSeconds = Math.max(RHYTHM_TRACK_OFFSET_MIN_SECONDS, Math.min(RHYTHM_TRACK_OFFSET_MAX_SECONDS, Number.isFinite(value) ? value : RHYTHM_TRACK_OFFSET_DEFAULT_SECONDS));
+        writeStoredJson(RHYTHM_TRACK_OFFSET_STORAGE_KEY, rhythmTrackOffsetSeconds);
+        return rhythmTrackOffsetSeconds;
+    }
+
+    function adjustRhythmTrackOffset(deltaSeconds) {
+        return saveRhythmTrackOffset(rhythmTrackOffsetSeconds + deltaSeconds);
     }
 
     function clearLegacyLeaderboardStorage() {
@@ -267,6 +493,16 @@ export function createRhythmGameModule({
             .map(normalizeLeaderboardEntry)
             .sort(compareLeaderboardEntries)
             .slice(0, LEADERBOARD_LIMIT);
+    }
+
+    function configureChart(trackDurationSeconds = 0) {
+        chart = createRhythmChart(trackDurationSeconds);
+        chartSecondsPerBeat = 60 / chart.bpm;
+        chartDuration = chart.notes.reduce((maxTime, note) => Math.max(maxTime, ((note.beat ?? 0) + (note.durationBeats ?? 0)) * chartSecondsPerBeat), 0);
+        maxPossibleScore = chart.notes.reduce((total, note) => {
+            const reward = note.type === 'hold' ? getHoldReward('perfect') : getTapReward('perfect');
+            return total + reward.score;
+        }, 0);
     }
 
     function getLeaderboardScoreTone(scoreValue) {
@@ -428,24 +664,50 @@ export function createRhythmGameModule({
     bindPlayerIdField(playerIdInput);
     bindPlayerIdField(finishPlayerIdInput);
 
+    timingOffsetSlider?.addEventListener('input', (event) => {
+        if (!(event.target instanceof HTMLInputElement)) return;
+        if (isRunning) return;
+        setRhythmTrackOffset(Number(event.target.value));
+    });
+
     clearLegacyLeaderboardStorage();
+    rhythmTrackOffsetSeconds = loadRhythmTrackOffset();
+    updateTimingOffsetDisplay();
+    updateTimingBiasDisplay();
     playerId = loadPlayerId();
     leaderboardEntries = loadLeaderboardEntries();
     renderLeaderboardEntries();
 
     function buildNotes() {
-        notes = chart.notes.map((note, index) => ({
-            ...note,
-            id: index,
-            endTime: note.time + (note.duration ?? 0),
-            state: 'pending',
-            element: null,
-            keyHeld: false,
-            holdBucket: null,
-            holdStartedAt: null,
-            startMissed: false,
-            releaseReason: null
-        }));
+        notes = chart.notes.map((note, index) => {
+            const time = (chart.offsetSeconds ?? 0) + ((note.beat ?? 0) * chartSecondsPerBeat);
+            const duration = (note.durationBeats ?? 0) * chartSecondsPerBeat;
+
+            if (!shouldKeepRhythmNote(time, duration, note.type)) {
+                return null;
+            }
+
+            return {
+                ...note,
+                id: index,
+                time,
+                duration,
+                endTime: time + duration,
+                state: 'pending',
+                element: null,
+                keyHeld: false,
+                holdBucket: null,
+                holdStartedAt: null,
+                startMissed: false,
+                releaseReason: null,
+            };
+        }).filter(Boolean);
+
+        chartDuration = notes.reduce((maxTime, note) => Math.max(maxTime, note.time + note.duration), 0);
+        maxPossibleScore = notes.reduce((total, note) => {
+            const reward = note.type === 'hold' ? getHoldReward('perfect') : getTapReward('perfect');
+            return total + reward.score;
+        }, 0);
 
         activeHoldNotes.clear();
 
@@ -469,7 +731,6 @@ export function createRhythmGameModule({
             laneRailElements[note.lane]?.appendChild(el);
         }
     }
-
     function getJudgementVariant(label) {
         const normalized = typeof label === 'string' ? label.toLowerCase() : '';
 
@@ -755,6 +1016,7 @@ export function createRhythmGameModule({
         if (missValue) missValue.textContent = String(missCount);
         updateScoreAppearance();
         updateComboAppearance();
+        updateTimingBiasDisplay();
     }
 
     function updateProgressBar(runTime) {
@@ -781,6 +1043,151 @@ export function createRhythmGameModule({
         updateHud();
     }
 
+    function clampRhythmOffset(value) {
+        return Math.max(
+            RHYTHM_TRACK_OFFSET_MIN_SECONDS,
+            Math.min(RHYTHM_TRACK_OFFSET_MAX_SECONDS, Number.isFinite(value) ? value : RHYTHM_TRACK_OFFSET_DEFAULT_SECONDS)
+        );
+    }
+
+    function formatOffsetSeconds(value) {
+        const safeValue = Number.isFinite(value) ? value : 0;
+        const signed = safeValue > 0 ? '+' + safeValue.toFixed(2) : safeValue.toFixed(2);
+        return signed + 's';
+    }
+
+    function getAverageTimingOffsetSeconds() {
+        if (timingOffsets.length === 0) return 0;
+        return timingOffsets.reduce((sum, offset) => sum + offset, 0) / timingOffsets.length;
+    }
+
+    function formatTimingBias(valueSeconds) {
+        const safeMs = Math.round((Number.isFinite(valueSeconds) ? valueSeconds : 0) * 1000);
+        if (safeMs === 0) return 'Centered';
+        return safeMs < 0 ? `Early ${Math.abs(safeMs)}ms` : `Late ${safeMs}ms`;
+    }
+
+    function updateTimingOffsetDisplay(value = rhythmTrackOffsetSeconds) {
+        const safeValue = clampRhythmOffset(value);
+        const range = RHYTHM_TRACK_OFFSET_MAX_SECONDS - RHYTHM_TRACK_OFFSET_MIN_SECONDS;
+        const ratio = range <= 0 ? 0.5 : (safeValue - RHYTHM_TRACK_OFFSET_MIN_SECONDS) / range;
+        const markerPercent = Math.max(0, Math.min(100, ratio * 100));
+
+        if (timingOffsetValue) {
+            timingOffsetValue.textContent = formatOffsetSeconds(safeValue);
+        }
+
+        if (timingOffsetSlider) {
+            timingOffsetSlider.value = safeValue.toFixed(2);
+            timingOffsetSlider.disabled = isRunning;
+        }
+
+        if (timingOffsetMeter) {
+            timingOffsetMeter.classList.toggle('is-zero', Math.abs(safeValue) < 0.00001);
+        }
+
+        if (timingOffsetMarker) {
+            timingOffsetMarker.style.left = markerPercent.toFixed(2) + '%';
+        }
+
+        if (timingOffsetNote) {
+            timingOffsetNote.textContent = safeValue === 0
+                ? '拖曳滑桿，或按 [ / ] 微調 note 與音樂的相對位置。'
+                : safeValue < 0
+                    ? '目前 note 比音樂早，往右拖或按 ] 會更晚。'
+                    : '目前 note 比音樂晚，往左拖或按 [ 會更早。';
+        }
+    }
+
+    function updateTimingBiasDisplay() {
+        const averageSeconds = getAverageTimingOffsetSeconds();
+        const averageMs = Math.round(averageSeconds * 1000);
+        const rangeMs = 180;
+        const markerPercent = Math.max(0, Math.min(100, ((averageMs + rangeMs) / (rangeMs * 2)) * 100));
+
+        if (timingBiasValue) {
+            timingBiasValue.textContent = formatTimingBias(averageSeconds);
+        }
+
+        if (timingBiasMeter) {
+            timingBiasMeter.classList.toggle('is-zero', averageMs === 0);
+        }
+
+        if (timingBiasMarker) {
+            timingBiasMarker.style.left = markerPercent.toFixed(2) + '%';
+        }
+    }
+
+    function setRhythmTrackOffset(nextValue) {
+        const nextOffset = saveRhythmTrackOffset(nextValue);
+        updateTimingOffsetDisplay(nextOffset);
+        configureChart(rhythmTrackPlayer?.buffer?.duration ?? 0);
+        if (!isRunning) {
+            resetNoteState();
+        }
+        if (statusCopy) {
+            statusCopy.textContent = 'Offset 調整為 ' + formatOffsetSeconds(nextOffset) + '。拖曳滑桿可以即時微調 note。';
+        }
+        if (sessionHint) {
+            sessionHint.textContent = nextOffset === 0
+                ? '已對準中心。'
+                : nextOffset < 0
+                    ? '目前 note 偏早，建議往右拖一點。'
+                    : '目前 note 偏晚，建議往左拖一點。';
+        }
+        setJudgement('Offset', 'Timing ' + formatOffsetSeconds(nextOffset));
+        return nextOffset;
+    }
+
+    function applyRhythmTrackOffset(deltaSeconds) {
+        return setRhythmTrackOffset(rhythmTrackOffsetSeconds + deltaSeconds);
+    }
+
+    function ensureRhythmTrackPlayer() {
+        if (rhythmTrackPlayer) return rhythmTrackPlayer;
+        if (typeof Tone === 'undefined' || typeof Tone.Player !== 'function') return null;
+
+        rhythmTrackPlayer = new Tone.Player({
+            url: RHYTHM_TRACK_URL,
+            autostart: false,
+            loop: false,
+            volume: -5
+        }).toDestination();
+
+        return rhythmTrackPlayer;
+    }
+
+    async function loadRhythmTrackPlayer() {
+        const player = ensureRhythmTrackPlayer();
+        if (!player) return null;
+
+        await Tone.loaded();
+        const trackDurationSeconds = Number.isFinite(player.buffer?.duration) ? player.buffer.duration : 0;
+        rhythmAudibleWindow = detectRhythmAudibleWindow(getRhythmPlayerAudioBuffer(player), trackDurationSeconds);
+        configureChart(trackDurationSeconds);
+        return player;
+    }
+
+    function startRhythmTrack() {
+        const player = ensureRhythmTrackPlayer();
+        if (!player || typeof Tone === 'undefined' || typeof Tone.now !== 'function') return;
+
+        player.stop();
+        player.seek = 0;
+        rhythmTrackStartTime = Tone.now() + LEAD_IN;
+        player.start(rhythmTrackStartTime);
+    }
+
+    function stopRhythmTrack() {
+        if (!rhythmTrackPlayer) {
+            rhythmTrackStartTime = null;
+            return;
+        }
+
+        rhythmTrackPlayer.stop();
+        rhythmTrackPlayer.seek = 0;
+        rhythmTrackStartTime = null;
+    }
     function setLaneHeld(laneIndex, held) {
         const lane = laneElements[laneIndex];
         if (!lane) return;
@@ -938,9 +1345,14 @@ export function createRhythmGameModule({
         if (rhythmInstrument && typeof rhythmInstrument.dispose === 'function') {
             rhythmInstrument.dispose();
         }
+        if (rhythmTrackPlayer && typeof rhythmTrackPlayer.dispose === 'function') {
+            rhythmTrackPlayer.dispose();
+        }
         rhythmInstrument = null;
         rhythmLofiVibrato = null;
         rhythmLofiFilter = null;
+        rhythmTrackPlayer = null;
+        rhythmTrackStartTime = null;
     }
 
     async function ensureAudioTools() {
@@ -952,18 +1364,21 @@ export function createRhythmGameModule({
             rhythmLofiVibrato = created.lofiVibrato;
             rhythmLofiFilter = created.lofiFilter;
         }
+
+        await loadRhythmTrackPlayer();
     }
 
     function currentRunTime() {
+        if (rhythmTrackStartTime !== null && typeof Tone !== 'undefined' && typeof Tone.now === 'function') {
+            return Tone.now() - rhythmTrackStartTime;
+        }
         return nowSeconds() - runStartAt;
     }
 
     function playLaneSound(laneIndex) {
-        if (!rhythmInstrument) return;
         const midi = LANE_MIDIS[laneIndex] ?? 60;
         const visualX = LANE_VISUAL_X[laneIndex] ?? 0;
         playVisualFeedback('user', midi, visualX, -1.9);
-        playMidiWithInstrument(rhythmInstrument, 'chiptune_lead', midi);
     }
 
     function recordFinalResult(note, bucket, label, detail, scoreDelta, accuracyWeight, offsetSeconds = null) {
@@ -1003,15 +1418,6 @@ export function createRhythmGameModule({
             note.element.classList.remove('is-visible', 'is-holding');
             note.element.classList.remove('is-start-miss');
             note.element.classList.add(bucket === 'miss' ? 'is-miss' : 'is-hit');
-            if (bucket !== 'miss') {
-                const elementRef = note.element;
-                window.setTimeout(() => {
-                    if (elementRef && elementRef.isConnected) {
-                        elementRef.remove();
-                    }
-                }, 720);
-                note.element = null;
-            }
         }
 
         setJudgement(label, detail);
@@ -1101,17 +1507,35 @@ export function createRhythmGameModule({
             }
         }
     }
-    function getVisualNoteHeightPercent(note, runTime) {
-        if (note.type === 'hold') {
-            if (note.state === 'holding') {
-                const remaining = Math.max(0, note.endTime - runTime);
-                return Math.max(0, (remaining / TRAVEL_TIME) * 100 - HOLD_VISUAL_GAP_PCT);
-            }
+    function getCurrentNoteVisualState(note, runTime) {
+        const timeUntilHit = note.time - runTime;
+        const progress = 1 - (timeUntilHit / TRAVEL_TIME);
+        const naturalBottomPercent = (1 - progress) * 100;
 
-            return Math.max(0, (note.duration / TRAVEL_TIME) * 100 - HOLD_VISUAL_GAP_PCT);
+        if (note.type === 'hold' && note.state === 'holding') {
+            const remaining = Math.max(0, note.endTime - runTime);
+            return {
+                bottom: 0,
+                height: Math.max(0, (remaining / TRAVEL_TIME) * 100 - HOLD_VISUAL_GAP_PCT),
+                holdExtra: (note.duration / TRAVEL_TIME) * 100,
+                progress
+            };
         }
 
-        return TAP_VISUAL_HEIGHT_PCT;
+        const height = note.type === 'hold'
+            ? Math.max(0, (note.duration / TRAVEL_TIME) * 100 - HOLD_VISUAL_GAP_PCT)
+            : TAP_VISUAL_HEIGHT_PCT;
+
+        return {
+            bottom: naturalBottomPercent,
+            height,
+            holdExtra: note.type === 'hold' ? (note.duration / TRAVEL_TIME) * 100 : 0,
+            progress
+        };
+    }
+
+    function getVisualNoteHeightPercent(note, runTime) {
+        return getCurrentNoteVisualState(note, runTime).height;
     }
 
     function updateNotePositions(runTime) {
@@ -1119,33 +1543,28 @@ export function createRhythmGameModule({
 
         for (const note of notes) {
             if (!note.element) continue;
-            if (note.state === 'hit') continue;
 
-            const timeUntilHit = note.time - runTime;
-            const progress = 1 - (timeUntilHit / TRAVEL_TIME);
-            const naturalBottomPercent = (1 - progress) * 100;
-            const noteHeightPercent = getVisualNoteHeightPercent(note, runTime);
-            const holdExtra = note.type === 'hold' ? (note.duration / TRAVEL_TIME) * 100 : 0;
+            const visualState = getCurrentNoteVisualState(note, runTime);
             const laneBottomLimit = laneState.get(note.lane) ?? -10_000;
             const visualBottomPercent = laneBottomLimit <= -9_000
-                ? naturalBottomPercent
-                : Math.max(naturalBottomPercent, laneBottomLimit);
-            const visible = progress >= -0.08 && visualBottomPercent >= -(holdExtra + 18) && visualBottomPercent <= 118;
+                ? visualState.bottom
+                : Math.max(visualState.bottom, laneBottomLimit);
+            const visible = visualState.progress >= -0.08 && visualBottomPercent >= -(visualState.holdExtra + 18) && visualBottomPercent <= 118;
 
             note.element.classList.toggle('is-visible', visible || note.state === 'holding' || note.state === 'missed');
 
             if (note.type === 'hold' && note.state === 'holding') {
                 note.element.style.bottom = `0%`;
-                note.element.style.height = `${noteHeightPercent}%`;
+                note.element.style.height = `${visualState.height}%`;
             } else {
                 note.element.style.bottom = `${visualBottomPercent}%`;
                 if (note.type === 'hold') {
-                    note.element.style.height = `${noteHeightPercent}%`;
+                    note.element.style.height = `${visualState.height}%`;
                 }
             }
 
             if (note.state === 'missed') {
-                const missRemovalLimit = -(noteHeightPercent + 24);
+                const missRemovalLimit = -(visualState.height + 24);
                 if (visualBottomPercent <= missRemovalLimit) {
                     note.element.remove();
                     note.element = null;
@@ -1153,7 +1572,16 @@ export function createRhythmGameModule({
                 }
             }
 
-            laneState.set(note.lane, visualBottomPercent + noteHeightPercent + NOTE_VISUAL_GAP_PCT);
+            if (note.state === 'hit') {
+                const hitRemovalLimit = -(visualState.height + 24);
+                if (visualBottomPercent <= hitRemovalLimit) {
+                    note.element.remove();
+                    note.element = null;
+                    continue;
+                }
+            }
+
+            laneState.set(note.lane, visualBottomPercent + visualState.height + NOTE_VISUAL_GAP_PCT);
         }
     }
 
@@ -1197,6 +1625,7 @@ export function createRhythmGameModule({
         results.classList.remove('active');
         startButton.textContent = 'Running...';
         runStartAt = nowSeconds() + LEAD_IN;
+        startRhythmTrack();
         statusCopy.textContent = `${chart.title} 已載入。這輪除了 tap，也有幾顆 hold note 會混進來。`;
         if (sessionHint) {
             sessionHint.textContent = 'tap 是短按，hold 要從起點接住後一路按到尾端。這樣比較接近真正節奏遊戲的手感。';
@@ -1209,6 +1638,7 @@ export function createRhythmGameModule({
     function resetRun() {
         clearAutoStartTimer();
         isRunning = false;
+        stopRhythmTrack();
         for (const timer of holdSprayTimers.values()) { clearInterval(timer); }
         holdSprayTimers.clear();
         activeHoldNotes.clear();
@@ -1243,6 +1673,7 @@ export function createRhythmGameModule({
         clearAutoStartTimer();
         isActive = false;
         isRunning = false;
+        stopRhythmTrack();
         for (const timer of holdSprayTimers.values()) { clearInterval(timer); }
         holdSprayTimers.clear();
         activeHoldNotes.clear();
@@ -1277,6 +1708,14 @@ export function createRhythmGameModule({
     function handleKeyDown(event) {
         const key = event.key.toLowerCase();
         const laneIndex = LANE_KEYS.indexOf(key);
+        if (key === '[' || key === ']') {
+            event.preventDefault();
+            if (!isActive || isRunning) return true;
+            const step = event.shiftKey ? 0.05 : RHYTHM_TRACK_OFFSET_STEP_SECONDS;
+            applyRhythmTrackOffset(key === '[' ? -step : step);
+            return true;
+        }
+
         if (laneIndex === -1) return false;
 
         if (isFinishModalOpen) return false;
@@ -1424,6 +1863,7 @@ export function createRhythmGameModule({
         });
     }
 
+    configureChart();
     buildNotes();
     bindControls();
     renderLeaderboardEntries();

@@ -1942,9 +1942,304 @@
 
         .rhythm-game-controls {
             display: flex;
-            order: 2;
+            flex-direction: column;
+            gap: 14px;
             align-items: center;
             justify-content: center;
+            order: 2;
+        }
+
+        .rhythm-game-timing-tuner {
+            position: relative;
+            width: min(100%, 900px);
+            padding: 14px 16px 13px;
+            border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02)),
+                rgba(9, 14, 24, 0.62);
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.06),
+                0 16px 32px rgba(0,0,0,0.16);
+            backdrop-filter: blur(12px);
+            color: #f8fcff;
+            box-sizing: border-box;
+        }
+
+        .rhythm-game-timing-header {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .rhythm-game-timing-label {
+            font-size: 11px;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.64);
+        }
+
+        .rhythm-game-timing-value {
+            font-size: clamp(15px, 1.2vw, 19px);
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            font-variant-numeric: tabular-nums;
+            color: #ffffff;
+            text-shadow:
+                0 0 10px rgba(110, 223, 255, 0.24),
+                0 0 18px rgba(255, 214, 108, 0.14);
+        }
+
+        .rhythm-game-timing-meter {
+            position: relative;
+            height: 22px;
+            border-radius: 999px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.08);
+            background:
+                linear-gradient(90deg,
+                    rgba(86, 214, 255, 0.18) 0%,
+                    rgba(86, 214, 255, 0.10) 34%,
+                    rgba(255,255,255,0.06) 50%,
+                    rgba(255, 220, 120, 0.10) 66%,
+                    rgba(255, 220, 120, 0.18) 100%),
+                rgba(8, 12, 18, 0.76);
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.05),
+                0 0 0 1px rgba(0,0,0,0.08),
+                0 0 18px rgba(95, 205, 255, 0.12);
+        }
+
+        .rhythm-game-timing-meter::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(90deg,
+                    transparent calc(50% - 1px),
+                    rgba(255,255,255,0.48) calc(50% - 1px),
+                    rgba(255,255,255,0.48) calc(50% + 1px),
+                    transparent calc(50% + 1px));
+            opacity: 0.9;
+            pointer-events: none;
+        }
+
+        .rhythm-game-timing-marker {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 16px;
+            height: 16px;
+            border-radius: 999px;
+            transform: translate(-50%, -50%);
+            background: radial-gradient(circle at 32% 28%, #ffffff, #8ff1ff 42%, #2a7eff 100%);
+            box-shadow:
+                0 0 0 3px rgba(255,255,255,0.1),
+                0 0 16px rgba(120, 227, 255, 0.58),
+                0 0 30px rgba(255, 214, 109, 0.18);
+            transition: left 0.08s linear, background 0.16s ease, box-shadow 0.16s ease;
+            pointer-events: none;
+        }
+
+        .rhythm-game-timing-meter.is-zero .rhythm-game-timing-marker {
+            background: radial-gradient(circle at 32% 28%, #ffffff, #ffe08a 42%, #d6a532 100%);
+            box-shadow:
+                0 0 0 3px rgba(255,255,255,0.12),
+                0 0 20px rgba(255, 226, 138, 0.52),
+                0 0 36px rgba(255, 226, 138, 0.22);
+        }
+
+        .rhythm-game-timing-slider {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            appearance: none;
+            background: transparent;
+            cursor: grab;
+            touch-action: none;
+            z-index: 2;
+        }
+
+        .rhythm-game-timing-slider:active {
+            cursor: grabbing;
+        }
+
+        .rhythm-game-timing-slider::-webkit-slider-runnable-track {
+            height: 100%;
+            background: transparent;
+            border: none;
+        }
+
+        .rhythm-game-timing-slider::-moz-range-track {
+            height: 100%;
+            background: transparent;
+            border: none;
+        }
+
+        .rhythm-game-timing-slider::-webkit-slider-thumb {
+            appearance: none;
+            width: 22px;
+            height: 22px;
+            margin-top: 0;
+            border: 1px solid rgba(255,255,255,0.35);
+            border-radius: 999px;
+            background: radial-gradient(circle at 32% 28%, #ffffff, #89ecff 42%, #2674ff 100%);
+            box-shadow:
+                0 0 0 3px rgba(255,255,255,0.08),
+                0 0 16px rgba(120, 227, 255, 0.5),
+                0 0 28px rgba(255, 214, 109, 0.18);
+        }
+
+        .rhythm-game-timing-slider::-moz-range-thumb {
+            width: 22px;
+            height: 22px;
+            border: 1px solid rgba(255,255,255,0.35);
+            border-radius: 999px;
+            background: radial-gradient(circle at 32% 28%, #ffffff, #89ecff 42%, #2674ff 100%);
+            box-shadow:
+                0 0 0 3px rgba(255,255,255,0.08),
+                0 0 16px rgba(120, 227, 255, 0.5),
+                0 0 28px rgba(255, 214, 109, 0.18);
+        }
+
+        .rhythm-game-timing-scale {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            font-size: 10px;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.54);
+        }
+
+        .rhythm-game-timing-note {
+            margin-top: 9px;
+            font-size: 11px;
+            line-height: 1.45;
+            color: rgba(255,255,255,0.66);
+        }
+
+        .rhythm-game-sync-guide,
+        .rhythm-game-bias-meter {
+            padding: 11px 12px 10px;
+            border-radius: 16px;
+            border: 1px solid rgba(255,255,255,0.07);
+            background: rgba(255,255,255,0.03);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+        }
+
+        .rhythm-game-sync-guide {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .rhythm-game-sync-guide-header,
+        .rhythm-game-bias-meter-header {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
+            font-size: 11px;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.62);
+        }
+
+        .rhythm-game-sync-track,
+        .rhythm-game-bias-track {
+            position: relative;
+            height: 18px;
+            border-radius: 999px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.08);
+            background:
+                linear-gradient(90deg, rgba(255, 98, 98, 0.14), rgba(255,255,255,0.05) 50%, rgba(108, 226, 255, 0.14)),
+                rgba(8, 12, 18, 0.72);
+        }
+
+        .rhythm-game-sync-track::before,
+        .rhythm-game-bias-track::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(90deg,
+                    transparent calc(50% - 1px),
+                    rgba(255,255,255,0.52) calc(50% - 1px),
+                    rgba(255,255,255,0.52) calc(50% + 1px),
+                    transparent calc(50% + 1px));
+            opacity: 0.95;
+            pointer-events: none;
+        }
+
+        .rhythm-game-sync-anchor,
+        .rhythm-game-bias-marker {
+            position: absolute;
+            top: 50%;
+            width: 14px;
+            height: 14px;
+            border-radius: 999px;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        .rhythm-game-sync-anchor.music {
+            left: 50%;
+            background: radial-gradient(circle at 32% 28%, #ffffff, #ffe08a 45%, #cc8f18 100%);
+            box-shadow:
+                0 0 0 3px rgba(255,255,255,0.08),
+                0 0 14px rgba(255, 224, 138, 0.42);
+        }
+
+        .rhythm-game-sync-anchor.note {
+            left: 50%;
+            background: radial-gradient(circle at 32% 28%, #ffffff, #8ff1ff 42%, #2a7eff 100%);
+            box-shadow:
+                0 0 0 3px rgba(255,255,255,0.08),
+                0 0 16px rgba(120, 227, 255, 0.56);
+            transition: left 0.08s linear;
+        }
+
+        .rhythm-game-sync-labels,
+        .rhythm-game-bias-scale {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.5);
+        }
+
+        .rhythm-game-bias-meter {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .rhythm-game-bias-track {
+            height: 20px;
+        }
+
+        .rhythm-game-bias-marker {
+            left: 50%;
+            background: radial-gradient(circle at 32% 28%, #ffffff, #ffe08a 42%, #d6a532 100%);
+            box-shadow:
+                0 0 0 3px rgba(255,255,255,0.08),
+                0 0 14px rgba(255, 226, 138, 0.42);
+            transition: left 0.08s linear;
+        }
+
+        .rhythm-game-bias-value {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            font-variant-numeric: tabular-nums;
+            color: #fff;
         }
 
         .rhythm-game-leaderboard {
@@ -4012,6 +4307,50 @@
                         <button class="rhythm-game-button primary" id="rg-start-button" type="button">Start Run</button>
 
                     </div>
+                    <div class="rhythm-game-timing-tuner" aria-label="Timing offset visualizer">
+                        <div class="rhythm-game-timing-header">
+                            <div class="rhythm-game-timing-label">Timing Offset</div>
+                            <div class="rhythm-game-timing-value" id="rg-timing-offset-value">+0.00s</div>
+                        </div>
+                        <div class="rhythm-game-timing-meter" id="rg-timing-offset-meter">
+                            <div class="rhythm-game-timing-marker" id="rg-timing-offset-marker"></div>
+                            <input class="rhythm-game-timing-slider" id="rg-timing-offset-slider" type="range" min="-1.5" max="1.5" step="0.01" value="0" aria-label="Timing offset slider">
+                        </div>
+                        <div class="rhythm-game-timing-scale" aria-hidden="true">
+                            <span>Early</span>
+                            <span>Center</span>
+                            <span>Late</span>
+                        </div>
+                        <div class="rhythm-game-sync-guide">
+                            <div class="rhythm-game-sync-guide-header">
+                                <span>Music / Note Alignment</span>
+                                <span>Offset Guide</span>
+                            </div>
+                            <div class="rhythm-game-sync-track" id="rg-sync-track">
+                                <div class="rhythm-game-sync-anchor music"></div>
+                                <div class="rhythm-game-sync-anchor note" id="rg-sync-note-anchor"></div>
+                            </div>
+                            <div class="rhythm-game-sync-labels">
+                                <span>Music</span>
+                                <span>Note</span>
+                            </div>
+                        </div>
+                        <div class="rhythm-game-bias-meter">
+                            <div class="rhythm-game-bias-meter-header">
+                                <span>Live Bias</span>
+                                <span class="rhythm-game-bias-value" id="rg-timing-bias-value">Centered</span>
+                            </div>
+                            <div class="rhythm-game-bias-track" id="rg-timing-bias-meter">
+                                <div class="rhythm-game-bias-marker" id="rg-timing-bias-marker"></div>
+                            </div>
+                            <div class="rhythm-game-bias-scale">
+                                <span>Early</span>
+                                <span>Center</span>
+                                <span>Late</span>
+                            </div>
+                        </div>
+                        <div class="rhythm-game-timing-note" id="rg-timing-offset-note">拖曳滑桿或按 [ = note 變早，] = note 變晚</div>
+                    </div>
                 </div>
 
                 <div class="rhythm-game-judgement-layer" aria-live="polite" aria-atomic="true">
@@ -4065,6 +4404,8 @@
     <script type="module" src="./src/main.js"></script>
 </body>
 </html>
+
+
 
 
 
