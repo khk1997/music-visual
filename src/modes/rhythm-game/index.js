@@ -392,7 +392,7 @@ export function createRhythmGameModule({
     let pendingFinishResult = null;
     let isFinishModalOpen = false;
     const LEADERBOARD_LIMIT = 10;
-    const LEADERBOARD_STORAGE_KEY = 'visual-music-game.rhythm.leaderboard.v2';
+    const LEADERBOARD_STORAGE_KEY = 'visual-music-game.rhythm.leaderboard.v3';
     const LEGACY_LEADERBOARD_STORAGE_KEY = 'visual-music-game.rhythm.leaderboard.v1';
     const PLAYER_ID_STORAGE_KEY = 'visual-music-game.rhythm.player-id.v1';
     let playerId = '';
@@ -1878,6 +1878,7 @@ export function createRhythmGameModule({
         reset: resetRun
     };
 }
+
 
 
 
