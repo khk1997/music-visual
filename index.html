@@ -1789,7 +1789,7 @@
             align-items: center;
             justify-content: flex-start;
             gap: 18px;
-            padding: 118px 24px 18px;
+            padding: 104px 24px 18px;
             box-sizing: border-box;
             overflow: visible;
         }
@@ -2511,8 +2511,8 @@
             grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 10px;
             width: min(100%, 900px);
-            height: min(80vh, 880px);
-            min-height: 640px;
+            height: min(86vh, 960px);
+            min-height: 720px;
             padding: 16px 14px 14px;
             border-radius: 28px;
             border: none;
@@ -3060,8 +3060,8 @@
 
         @media (max-width: 980px) {
             .rhythm-game-lanes {
-                height: min(68vh, 700px);
-                min-height: 560px;
+                height: min(74vh, 780px);
+                min-height: 620px;
             }
 
             .rhythm-game-stat-grid,
@@ -3076,7 +3076,7 @@
                 display: flex;
                 flex-direction: column;
                 gap: 12px;
-                padding: 146px 0 16px;
+                padding: 128px 0 16px;
             }
 
             .rhythm-game-stat-grid,
@@ -3102,8 +3102,8 @@
 
             .rhythm-game-lanes {
                 gap: 8px;
-                min-height: 480px;
-                height: min(64vh, 600px);
+                min-height: 520px;
+                height: min(70vh, 640px);
                 padding: 12px 10px 10px;
                 width: min(100%, 860px);
             }
@@ -4306,50 +4306,6 @@
                     <div class="rhythm-game-actions">
                         <button class="rhythm-game-button primary" id="rg-start-button" type="button">Start Run</button>
 
-                    </div>
-                    <div class="rhythm-game-timing-tuner" aria-label="Timing offset visualizer">
-                        <div class="rhythm-game-timing-header">
-                            <div class="rhythm-game-timing-label">Timing Offset</div>
-                            <div class="rhythm-game-timing-value" id="rg-timing-offset-value">+0.00s</div>
-                        </div>
-                        <div class="rhythm-game-timing-meter" id="rg-timing-offset-meter">
-                            <div class="rhythm-game-timing-marker" id="rg-timing-offset-marker"></div>
-                            <input class="rhythm-game-timing-slider" id="rg-timing-offset-slider" type="range" min="-1.5" max="1.5" step="0.01" value="0" aria-label="Timing offset slider">
-                        </div>
-                        <div class="rhythm-game-timing-scale" aria-hidden="true">
-                            <span>Early</span>
-                            <span>Center</span>
-                            <span>Late</span>
-                        </div>
-                        <div class="rhythm-game-sync-guide">
-                            <div class="rhythm-game-sync-guide-header">
-                                <span>Music / Note Alignment</span>
-                                <span>Offset Guide</span>
-                            </div>
-                            <div class="rhythm-game-sync-track" id="rg-sync-track">
-                                <div class="rhythm-game-sync-anchor music"></div>
-                                <div class="rhythm-game-sync-anchor note" id="rg-sync-note-anchor"></div>
-                            </div>
-                            <div class="rhythm-game-sync-labels">
-                                <span>Music</span>
-                                <span>Note</span>
-                            </div>
-                        </div>
-                        <div class="rhythm-game-bias-meter">
-                            <div class="rhythm-game-bias-meter-header">
-                                <span>Live Bias</span>
-                                <span class="rhythm-game-bias-value" id="rg-timing-bias-value">Centered</span>
-                            </div>
-                            <div class="rhythm-game-bias-track" id="rg-timing-bias-meter">
-                                <div class="rhythm-game-bias-marker" id="rg-timing-bias-marker"></div>
-                            </div>
-                            <div class="rhythm-game-bias-scale">
-                                <span>Early</span>
-                                <span>Center</span>
-                                <span>Late</span>
-                            </div>
-                        </div>
-                        <div class="rhythm-game-timing-note" id="rg-timing-offset-note">拖曳滑桿或按 [ = note 變早，] = note 變晚</div>
                     </div>
                 </div>
 

@@ -15,12 +15,8 @@ const JUDGEMENT_VISIBLE_MS = 680;
 const JUDGEMENT_PERFECT_REPLAY_GAP_MS = 240;
 const JUDGEMENT_OTHER_REPLAY_GAP_MS = 120;
 const RHYTHM_TRACK_URL = new URL('../../../music/1-1.mp3', import.meta.url).href;
-const RHYTHM_TRACK_OFFSET_DEFAULT_SECONDS = -0.87;
-const RHYTHM_TRACK_OFFSET_MIN_SECONDS = -1.5;
-const RHYTHM_TRACK_OFFSET_MAX_SECONDS = 1.5;
-const RHYTHM_TRACK_OFFSET_STORAGE_KEY = 'visual-music-game.rhythm.track-offset.v1';
-const RHYTHM_TRACK_OFFSET_STEP_SECONDS = 0.02;
-let rhythmTrackOffsetSeconds = RHYTHM_TRACK_OFFSET_DEFAULT_SECONDS;
+const RHYTHM_TRACK_OFFSET_SECONDS = -0.87;
+const RHYTHM_CHART_INTRO_SKIP_BEATS = 8;
 let rhythmTrackDurationSeconds = 0;
 let rhythmAudibleWindow = { start: 0, end: 0 };
 
@@ -32,7 +28,8 @@ function createRhythmChart(trackDurationSeconds = 0) {
         : 48;
     const totalBeats = Math.max(64, Math.ceil(safeDuration / secondsPerBeat));
     const sectionLength = 8;
-    const sectionCount = Math.ceil(totalBeats / sectionLength);
+    const chartStartBeat = RHYTHM_CHART_INTRO_SKIP_BEATS;
+    const sectionCount = Math.max(0, Math.ceil((totalBeats - chartStartBeat) / sectionLength));
     const notes = [];
     const templates = [
         [
@@ -108,7 +105,7 @@ function createRhythmChart(trackDurationSeconds = 0) {
     const laneShiftTable = [0, 1, 3, 2, 0, 2, 1, 3];
 
     for (let sectionIndex = 0; sectionIndex < sectionCount; sectionIndex += 1) {
-        const startBeat = sectionIndex * sectionLength;
+        const startBeat = chartStartBeat + sectionIndex * sectionLength;
         const template = templates[sectionIndex % templates.length];
         const laneShift = laneShiftTable[sectionIndex % laneShiftTable.length];
         const mirror = sectionIndex % 3 === 2;
@@ -142,10 +139,11 @@ function createRhythmChart(trackDurationSeconds = 0) {
     }
 
     notes.sort((a, b) => a.beat - b.beat || a.lane - b.lane);
+    notes.splice(-6, 6);
 
     return {
         bpm,
-        offsetSeconds: rhythmTrackOffsetSeconds,
+        offsetSeconds: RHYTHM_TRACK_OFFSET_SECONDS,
         title: '1-1 Adventure Battle',
         notes
     };
@@ -277,10 +275,10 @@ function getTapReward(bucket) {
 
 function getHoldReward(bucket) {
     if (bucket === 'perfect') {
-        return { score: 1400, weight: 1, label: 'Perfect Hold' };
+        return { score: 1400, weight: 1, label: 'Perfect' };
     }
     if (bucket === 'good') {
-        return { score: 980, weight: 0.82, label: 'Good Hold' };
+        return { score: 980, weight: 0.82, label: 'Good' };
     }
     return { score: 0, weight: 0, label: 'Miss' };
 }
@@ -326,15 +324,6 @@ export function createRhythmGameModule({
     const statusCopy = document.getElementById('rg-status-copy');
     const judgementValue = document.getElementById('rg-judgement-value');
     const sessionHint = document.getElementById('rg-session-hint');
-    const timingOffsetValue = document.getElementById('rg-timing-offset-value');
-    const timingOffsetSlider = document.getElementById('rg-timing-offset-slider');
-    const timingOffsetMeter = document.getElementById('rg-timing-offset-meter');
-    const timingOffsetMarker = document.getElementById('rg-timing-offset-marker');
-    const timingOffsetNote = document.getElementById('rg-timing-offset-note');
-    const timingSyncNoteAnchor = document.getElementById('rg-sync-note-anchor');
-    const timingBiasValue = document.getElementById('rg-timing-bias-value');
-    const timingBiasMeter = document.getElementById('rg-timing-bias-meter');
-    const timingBiasMarker = document.getElementById('rg-timing-bias-marker');
     const results = document.getElementById('rg-results');
     const resultGrade = document.getElementById('rg-result-grade');
     const resultBias = document.getElementById('rg-result-bias');
@@ -414,22 +403,6 @@ export function createRhythmGameModule({
         } catch {
             // Local storage can be unavailable in private mode; the leaderboard still works in-memory.
         }
-    }
-
-    function loadRhythmTrackOffset() {
-        const storedOffset = readStoredJson(RHYTHM_TRACK_OFFSET_STORAGE_KEY, RHYTHM_TRACK_OFFSET_DEFAULT_SECONDS);
-        if (!Number.isFinite(storedOffset)) return RHYTHM_TRACK_OFFSET_DEFAULT_SECONDS;
-        return Math.max(RHYTHM_TRACK_OFFSET_MIN_SECONDS, Math.min(RHYTHM_TRACK_OFFSET_MAX_SECONDS, storedOffset));
-    }
-
-    function saveRhythmTrackOffset(value) {
-        rhythmTrackOffsetSeconds = Math.max(RHYTHM_TRACK_OFFSET_MIN_SECONDS, Math.min(RHYTHM_TRACK_OFFSET_MAX_SECONDS, Number.isFinite(value) ? value : RHYTHM_TRACK_OFFSET_DEFAULT_SECONDS));
-        writeStoredJson(RHYTHM_TRACK_OFFSET_STORAGE_KEY, rhythmTrackOffsetSeconds);
-        return rhythmTrackOffsetSeconds;
-    }
-
-    function adjustRhythmTrackOffset(deltaSeconds) {
-        return saveRhythmTrackOffset(rhythmTrackOffsetSeconds + deltaSeconds);
     }
 
     function clearLegacyLeaderboardStorage() {
@@ -664,16 +637,7 @@ export function createRhythmGameModule({
     bindPlayerIdField(playerIdInput);
     bindPlayerIdField(finishPlayerIdInput);
 
-    timingOffsetSlider?.addEventListener('input', (event) => {
-        if (!(event.target instanceof HTMLInputElement)) return;
-        if (isRunning) return;
-        setRhythmTrackOffset(Number(event.target.value));
-    });
-
     clearLegacyLeaderboardStorage();
-    rhythmTrackOffsetSeconds = loadRhythmTrackOffset();
-    updateTimingOffsetDisplay();
-    updateTimingBiasDisplay();
     playerId = loadPlayerId();
     leaderboardEntries = loadLeaderboardEntries();
     renderLeaderboardEntries();
@@ -747,7 +711,7 @@ export function createRhythmGameModule({
         return 'is-neutral';
     }
 
-    function setJudgement(label, detail) {
+    function setJudgement(label) {
         if (!judgementValue) return;
 
         judgementValue.textContent = label;
@@ -1016,7 +980,6 @@ export function createRhythmGameModule({
         if (missValue) missValue.textContent = String(missCount);
         updateScoreAppearance();
         updateComboAppearance();
-        updateTimingBiasDisplay();
     }
 
     function updateProgressBar(runTime) {
@@ -1041,106 +1004,6 @@ export function createRhythmGameModule({
         goodCount = 0;
         missCount = 0;
         updateHud();
-    }
-
-    function clampRhythmOffset(value) {
-        return Math.max(
-            RHYTHM_TRACK_OFFSET_MIN_SECONDS,
-            Math.min(RHYTHM_TRACK_OFFSET_MAX_SECONDS, Number.isFinite(value) ? value : RHYTHM_TRACK_OFFSET_DEFAULT_SECONDS)
-        );
-    }
-
-    function formatOffsetSeconds(value) {
-        const safeValue = Number.isFinite(value) ? value : 0;
-        const signed = safeValue > 0 ? '+' + safeValue.toFixed(2) : safeValue.toFixed(2);
-        return signed + 's';
-    }
-
-    function getAverageTimingOffsetSeconds() {
-        if (timingOffsets.length === 0) return 0;
-        return timingOffsets.reduce((sum, offset) => sum + offset, 0) / timingOffsets.length;
-    }
-
-    function formatTimingBias(valueSeconds) {
-        const safeMs = Math.round((Number.isFinite(valueSeconds) ? valueSeconds : 0) * 1000);
-        if (safeMs === 0) return 'Centered';
-        return safeMs < 0 ? `Early ${Math.abs(safeMs)}ms` : `Late ${safeMs}ms`;
-    }
-
-    function updateTimingOffsetDisplay(value = rhythmTrackOffsetSeconds) {
-        const safeValue = clampRhythmOffset(value);
-        const range = RHYTHM_TRACK_OFFSET_MAX_SECONDS - RHYTHM_TRACK_OFFSET_MIN_SECONDS;
-        const ratio = range <= 0 ? 0.5 : (safeValue - RHYTHM_TRACK_OFFSET_MIN_SECONDS) / range;
-        const markerPercent = Math.max(0, Math.min(100, ratio * 100));
-
-        if (timingOffsetValue) {
-            timingOffsetValue.textContent = formatOffsetSeconds(safeValue);
-        }
-
-        if (timingOffsetSlider) {
-            timingOffsetSlider.value = safeValue.toFixed(2);
-            timingOffsetSlider.disabled = isRunning;
-        }
-
-        if (timingOffsetMeter) {
-            timingOffsetMeter.classList.toggle('is-zero', Math.abs(safeValue) < 0.00001);
-        }
-
-        if (timingOffsetMarker) {
-            timingOffsetMarker.style.left = markerPercent.toFixed(2) + '%';
-        }
-
-        if (timingOffsetNote) {
-            timingOffsetNote.textContent = safeValue === 0
-                ? '拖曳滑桿，或按 [ / ] 微調 note 與音樂的相對位置。'
-                : safeValue < 0
-                    ? '目前 note 比音樂早，往右拖或按 ] 會更晚。'
-                    : '目前 note 比音樂晚，往左拖或按 [ 會更早。';
-        }
-    }
-
-    function updateTimingBiasDisplay() {
-        const averageSeconds = getAverageTimingOffsetSeconds();
-        const averageMs = Math.round(averageSeconds * 1000);
-        const rangeMs = 180;
-        const markerPercent = Math.max(0, Math.min(100, ((averageMs + rangeMs) / (rangeMs * 2)) * 100));
-
-        if (timingBiasValue) {
-            timingBiasValue.textContent = formatTimingBias(averageSeconds);
-        }
-
-        if (timingBiasMeter) {
-            timingBiasMeter.classList.toggle('is-zero', averageMs === 0);
-        }
-
-        if (timingBiasMarker) {
-            timingBiasMarker.style.left = markerPercent.toFixed(2) + '%';
-        }
-    }
-
-    function setRhythmTrackOffset(nextValue) {
-        const nextOffset = saveRhythmTrackOffset(nextValue);
-        updateTimingOffsetDisplay(nextOffset);
-        configureChart(rhythmTrackPlayer?.buffer?.duration ?? 0);
-        if (!isRunning) {
-            resetNoteState();
-        }
-        if (statusCopy) {
-            statusCopy.textContent = 'Offset 調整為 ' + formatOffsetSeconds(nextOffset) + '。拖曳滑桿可以即時微調 note。';
-        }
-        if (sessionHint) {
-            sessionHint.textContent = nextOffset === 0
-                ? '已對準中心。'
-                : nextOffset < 0
-                    ? '目前 note 偏早，建議往右拖一點。'
-                    : '目前 note 偏晚，建議往左拖一點。';
-        }
-        setJudgement('Offset', 'Timing ' + formatOffsetSeconds(nextOffset));
-        return nextOffset;
-    }
-
-    function applyRhythmTrackOffset(deltaSeconds) {
-        return setRhythmTrackOffset(rhythmTrackOffsetSeconds + deltaSeconds);
     }
 
     function ensureRhythmTrackPlayer() {
@@ -1295,7 +1158,7 @@ export function createRhythmGameModule({
         pendingFinishResult = null;
         closeFinishModal();
         panel.classList.remove('playing');
-        startButton.textContent = 'Start Run';
+        updateStartButtonLabel(0);
         if (judgementValue) {
             if (judgementHideTimerId !== null) {
                 window.clearTimeout(judgementHideTimerId);
@@ -1375,13 +1238,31 @@ export function createRhythmGameModule({
         return nowSeconds() - runStartAt;
     }
 
+    function formatMusicTime(totalSeconds) {
+        const safeSeconds = Math.max(0, Math.floor(Number.isFinite(totalSeconds) ? totalSeconds : 0));
+        const minutes = Math.floor(safeSeconds / 60);
+        const seconds = safeSeconds % 60;
+        return `${minutes}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    function updateStartButtonLabel(runTime = currentRunTime()) {
+        if (!startButton) return;
+
+        if (!isRunning) {
+            startButton.textContent = 'Start Run';
+            return;
+        }
+
+        startButton.textContent = formatMusicTime(Math.max(0, runTime));
+    }
+
     function playLaneSound(laneIndex) {
         const midi = LANE_MIDIS[laneIndex] ?? 60;
         const visualX = LANE_VISUAL_X[laneIndex] ?? 0;
         playVisualFeedback('user', midi, visualX, -1.9);
     }
 
-    function recordFinalResult(note, bucket, label, detail, scoreDelta, accuracyWeight, offsetSeconds = null) {
+    function recordFinalResult(note, bucket, label, scoreDelta, accuracyWeight, offsetSeconds = null) {
         note.state = bucket === 'miss' ? 'missed' : 'hit';
         judgedCount += 1;
         totalAccuracyWeight += accuracyWeight;
@@ -1420,23 +1301,20 @@ export function createRhythmGameModule({
             note.element.classList.add(bucket === 'miss' ? 'is-miss' : 'is-hit');
         }
 
-        setJudgement(label, detail);
+        setJudgement(label);
         updateHud();
     }
 
     function finalizeTap(note, deltaSeconds) {
         const bucket = getJudgeBucket(deltaSeconds);
         const reward = getTapReward(bucket);
-        const detail = bucket === 'miss'
-            ? `偏差 ${Math.round(deltaSeconds * 1000)}ms`
-            : `命中偏差 ${Math.round(deltaSeconds * 1000)}ms`;
-        recordFinalResult(note, bucket, reward.label, detail, reward.score, reward.weight, deltaSeconds);
+        recordFinalResult(note, bucket, reward.label, reward.score, reward.weight, deltaSeconds);
     }
 
     function startHold(note, deltaSeconds) {
         const bucket = getJudgeBucket(deltaSeconds);
         if (bucket === 'miss') {
-            recordFinalResult(note, 'miss', 'Hold Miss', `起點偏差 ${Math.round(deltaSeconds * 1000)}ms`, 0, 0, deltaSeconds);
+            recordFinalResult(note, 'miss', 'Miss', 0, 0, deltaSeconds);
             return;
         }
 
@@ -1457,21 +1335,17 @@ export function createRhythmGameModule({
         startHoldSpray(note.lane);
 
         const startLabel = bucket === 'perfect' ? 'Perfect' : 'Good';
-        setJudgement(startLabel, `Hold Start · 按住到尾端，長度 ${Math.round(note.duration * 1000)}ms`);
+        setJudgement(startLabel);
     }
 
     function completeHold(note, releaseOffset = 0, autoCompleted = false) {
         const bucket = note.holdBucket ?? 'good';
         const reward = getHoldReward(bucket);
-        const detail = autoCompleted
-            ? `長按完成，尾端穩定接住了。`
-            : `尾端偏差 ${Math.round(releaseOffset * 1000)}ms`;
-        recordFinalResult(note, bucket, reward.label, detail, reward.score, reward.weight, note.holdStartedAt !== null ? note.holdStartedAt - note.time : 0);
+        recordFinalResult(note, bucket, reward.label, reward.score, reward.weight, note.holdStartedAt !== null ? note.holdStartedAt - note.time : 0);
     }
 
     function failHoldRelease(note, runTime) {
-        const earlyMs = Math.max(0, Math.round((note.endTime - runTime) * 1000));
-        recordFinalResult(note, 'miss', 'Hold Break', `太早放開，提早了 ${earlyMs}ms`, 0, 0, runTime - note.time);
+        recordFinalResult(note, 'miss', 'Miss', 0, 0, runTime - note.time);
     }
     function processAutoMisses(runTime) {
         for (const note of notes) {
@@ -1487,7 +1361,7 @@ export function createRhythmGameModule({
 
                     const holdMissWindow = note.endTime + JUDGE_WINDOWS.miss;
                     if (runTime > holdMissWindow) {
-                        recordFinalResult(note, 'miss', 'Hold Miss', `沒有按到 hold 起點`, 0, 0, runTime - note.time);
+                        recordFinalResult(note, 'miss', 'Miss', 0, 0, runTime - note.time);
                     }
                 } else if (runTime - note.time > JUDGE_WINDOWS.miss) {
                     finalizeTap(note, runTime - note.time);
@@ -1503,7 +1377,7 @@ export function createRhythmGameModule({
 
             // Failsafe: if a hold somehow stays "holding" past its tail for too long, mark it as miss and remove.
             if (note.state === 'holding' && runTime - note.endTime > JUDGE_WINDOWS.miss) {
-                recordFinalResult(note, 'miss', 'Hold Miss', `沒有按住到尾端`, 0, 0, runTime - note.time);
+                recordFinalResult(note, 'miss', 'Miss', 0, 0, runTime - note.time);
             }
         }
     }
@@ -1592,6 +1466,7 @@ export function createRhythmGameModule({
         if (!isActive || !isRunning) return;
 
         const runTime = currentRunTime();
+        updateStartButtonLabel(runTime);
         updateNotePositions(runTime);
         updateProgressBar(runTime);
         if (runTime >= 0) {
@@ -1623,7 +1498,6 @@ export function createRhythmGameModule({
         isRunning = true;
         panel.classList.add('playing');
         results.classList.remove('active');
-        startButton.textContent = 'Running...';
         runStartAt = nowSeconds() + LEAD_IN;
         startRhythmTrack();
         statusCopy.textContent = `${chart.title} 已載入。這輪除了 tap，也有幾顆 hold note 會混進來。`;
@@ -1632,6 +1506,7 @@ export function createRhythmGameModule({
         }
         updateHud();
         updateProgressBar(-LEAD_IN);
+        updateStartButtonLabel(0);
         startLoop();
     }
 
@@ -1708,14 +1583,6 @@ export function createRhythmGameModule({
     function handleKeyDown(event) {
         const key = event.key.toLowerCase();
         const laneIndex = LANE_KEYS.indexOf(key);
-        if (key === '[' || key === ']') {
-            event.preventDefault();
-            if (!isActive || isRunning) return true;
-            const step = event.shiftKey ? 0.05 : RHYTHM_TRACK_OFFSET_STEP_SECONDS;
-            applyRhythmTrackOffset(key === '[' ? -step : step);
-            return true;
-        }
-
         if (laneIndex === -1) return false;
 
         if (isFinishModalOpen) return false;
