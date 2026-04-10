@@ -2279,6 +2279,13 @@
             gap: 4px;
         }
 
+        .rhythm-game-leaderboard-mode {
+            color: rgba(255,255,255,0.52);
+            font-size: 10px;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+        }
+
         .rhythm-game-leaderboard-player {
             display: flex;
             flex-direction: column;
@@ -4077,6 +4084,7 @@
                     <div class="rhythm-game-leaderboard-card">
                         <div class="rhythm-game-leaderboard-header">
                             <div class="rhythm-game-controls-label">Top 10</div>
+                            <div class="rhythm-game-leaderboard-mode" id="rg-leaderboard-mode">Local leaderboard</div>
                             <div class="rhythm-game-leaderboard-player">
                                 <label class="rhythm-game-leaderboard-player-label" for="rg-player-id-input">Your ID</label>
                                 <input
@@ -4355,6 +4363,16 @@
                 "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
             }
         }
+    </script>
+
+    <script>
+        // Fill these in with your Supabase project values.
+        // If left blank, the game keeps using the local fallback leaderboard.
+        window.__SUPABASE_CONFIG__ = {
+            url: '',
+            anonKey: '',
+            leaderboardTable: 'rhythm_leaderboard'
+        };
     </script>
 
     <script type="module" src="./src/main.js"></script>

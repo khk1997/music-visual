@@ -1,3 +1,5 @@
+import { createSupabaseLeaderboardService } from './supabase-leaderboard.js';
+
 const LANE_KEYS = ['d', 'f', 'j', 'k'];
 const LANE_MIDIS = [60, 64, 67, 72];
 const LANE_VISUAL_X = [-1.8, -0.62, 0.62, 1.8];
@@ -311,6 +313,11 @@ export function createRhythmGameModule({
     playVisualFeedback
 }) {
     const panel = container;
+    const supabaseConfig = typeof window !== 'undefined' && window.__SUPABASE_CONFIG__ ? window.__SUPABASE_CONFIG__ : {};
+    const leaderboardService = createSupabaseLeaderboardService({
+        config: supabaseConfig,
+        tableName: supabaseConfig.leaderboardTable ?? 'rhythm_leaderboard'
+    });
     const startButton = document.getElementById('rg-start-button');
     const scoreValue = document.getElementById('rg-score-value');
     const comboValue = document.getElementById('rg-combo-value');
@@ -340,6 +347,7 @@ export function createRhythmGameModule({
     const finishRetryButton = document.getElementById('rg-finish-retry-button');
     const finishNote = document.getElementById('rg-finish-note');
     const leaderboardList = document.getElementById('rg-leaderboard-list');
+    const leaderboardMode = document.getElementById('rg-leaderboard-mode');
     const playerIdInput = document.getElementById('rg-player-id-input');
     const laneElements = Array.from(container.querySelectorAll('.rhythm-game-lane'));
     const laneRailElements = laneElements.map((lane) => lane.querySelector('.rhythm-game-lane-rail'));
@@ -456,7 +464,13 @@ export function createRhythmGameModule({
         return b.score - a.score || b.createdAt - a.createdAt;
     }
 
-    function loadLeaderboardEntries() {
+    function setLeaderboardModeLabel(label) {
+        if (leaderboardMode) {
+            leaderboardMode.textContent = label;
+        }
+    }
+
+    function loadLocalLeaderboardEntries() {
         const storedEntries = readStoredJson(LEADERBOARD_STORAGE_KEY, []);
         if (!Array.isArray(storedEntries)) {
             return [];
@@ -466,6 +480,60 @@ export function createRhythmGameModule({
             .map(normalizeLeaderboardEntry)
             .sort(compareLeaderboardEntries)
             .slice(0, LEADERBOARD_LIMIT);
+    }
+
+    function saveLocalLeaderboardEntries(entries) {
+        writeStoredJson(LEADERBOARD_STORAGE_KEY, entries);
+    }
+
+    async function refreshLeaderboardEntries() {
+        if (leaderboardService.isConfigured()) {
+            try {
+                const remoteEntries = await leaderboardService.loadEntries(LEADERBOARD_LIMIT);
+                if (Array.isArray(remoteEntries)) {
+                    leaderboardEntries = remoteEntries
+                        .map(normalizeLeaderboardEntry)
+                        .sort(compareLeaderboardEntries)
+                        .slice(0, LEADERBOARD_LIMIT);
+                    renderLeaderboardEntries();
+                    setLeaderboardModeLabel('Supabase live');
+                    return leaderboardEntries;
+                }
+            } catch (error) {
+                console.error('Rhythm leaderboard refresh failed:', error);
+                setLeaderboardModeLabel('Local fallback');
+            }
+        }
+
+        leaderboardEntries = loadLocalLeaderboardEntries();
+        renderLeaderboardEntries();
+        if (!leaderboardService.isConfigured()) {
+            setLeaderboardModeLabel('Local leaderboard');
+        }
+        return leaderboardEntries;
+    }
+
+    async function initializeLeaderboard() {
+        leaderboardEntries = loadLocalLeaderboardEntries();
+        renderLeaderboardEntries();
+
+        if (!leaderboardService.isConfigured()) {
+            setLeaderboardModeLabel('Local leaderboard');
+            return;
+        }
+
+        try {
+            await refreshLeaderboardEntries();
+            setLeaderboardModeLabel('Supabase live');
+            await leaderboardService.subscribe(() => {
+                refreshLeaderboardEntries().catch((error) => {
+                    console.error('Rhythm leaderboard realtime refresh failed:', error);
+                });
+            });
+        } catch (error) {
+            console.error('Rhythm leaderboard init failed:', error);
+            setLeaderboardModeLabel('Local fallback');
+        }
     }
 
     function configureChart(trackDurationSeconds = 0) {
@@ -568,7 +636,7 @@ export function createRhythmGameModule({
         leaderboardList.replaceChildren(...rows);
     }
 
-    function recordLeaderboardEntry(scoreValue, resultValue) {
+    async function recordLeaderboardEntry(scoreValue, resultValue) {
         const nextEntry = normalizeLeaderboardEntry({
             playerId,
             score: scoreValue,
@@ -576,12 +644,18 @@ export function createRhythmGameModule({
             createdAt: Date.now()
         });
 
-        leaderboardEntries = [nextEntry, ...leaderboardEntries]
-            .sort(compareLeaderboardEntries)
-            .slice(0, LEADERBOARD_LIMIT);
+        if (!leaderboardService.isConfigured()) {
+            leaderboardEntries = [nextEntry, ...loadLocalLeaderboardEntries()]
+                .sort(compareLeaderboardEntries)
+                .slice(0, LEADERBOARD_LIMIT);
+            saveLocalLeaderboardEntries(leaderboardEntries);
+            renderLeaderboardEntries();
+            return { source: 'local' };
+        }
 
-        writeStoredJson(LEADERBOARD_STORAGE_KEY, leaderboardEntries);
-        renderLeaderboardEntries();
+        await leaderboardService.submitEntry(nextEntry);
+        await refreshLeaderboardEntries();
+        return { source: 'supabase' };
     }
 
     function focusPlayerIdInput(selectAll = false) {
@@ -639,7 +713,7 @@ export function createRhythmGameModule({
 
     clearLegacyLeaderboardStorage();
     playerId = loadPlayerId();
-    leaderboardEntries = loadLeaderboardEntries();
+    leaderboardEntries = loadLocalLeaderboardEntries();
     renderLeaderboardEntries();
 
     function buildNotes() {
@@ -946,7 +1020,7 @@ export function createRhythmGameModule({
         setFinishModalVisible(false);
     }
 
-    function submitFinishResult() {
+    async function submitFinishResult() {
         if (!pendingFinishResult) return;
 
         const nextId = savePlayerId(finishPlayerIdInput?.value ?? playerId);
@@ -959,11 +1033,37 @@ export function createRhythmGameModule({
             return;
         }
 
-        recordLeaderboardEntry(pendingFinishResult.score, pendingFinishResult.grade);
+        let uploadedToSupabase = false;
+        try {
+            await recordLeaderboardEntry(pendingFinishResult.score, pendingFinishResult.grade);
+            uploadedToSupabase = leaderboardService.isConfigured();
+        } catch (error) {
+            console.error('Rhythm leaderboard submit failed:', error);
+            setLeaderboardModeLabel('Local fallback');
+            leaderboardEntries = [
+                normalizeLeaderboardEntry({
+                    playerId: nextId,
+                    score: pendingFinishResult.score,
+                    result: pendingFinishResult.grade,
+                    createdAt: Date.now()
+                }),
+                ...loadLocalLeaderboardEntries()
+            ]
+                .sort(compareLeaderboardEntries)
+                .slice(0, LEADERBOARD_LIMIT);
+            saveLocalLeaderboardEntries(leaderboardEntries);
+            renderLeaderboardEntries();
+            if (finishNote) {
+                finishNote.textContent = '排行榜連線失敗，先暫存在本機；Supabase 設定好後就會自動改成共用排行榜。';
+            }
+        }
+
         pendingFinishResult = null;
         closeFinishModal();
-        setJudgement('Uploaded', '成績已寫入排行榜。');
-        statusCopy.textContent = '成績已上傳，你可以直接再挑戰一次，或回到排行榜檢視結果。';
+        setJudgement('Uploaded');
+        statusCopy.textContent = uploadedToSupabase
+            ? '成績已上傳到 Supabase，其他電腦也會同步看到。'
+            : '成績已先存到本機。補好 Supabase 設定後，就會開始同步到所有電腦。';
 
     }
 
@@ -1712,7 +1812,11 @@ export function createRhythmGameModule({
             });
         });
 
-        finishUploadButton?.addEventListener('click', submitFinishResult);
+        finishUploadButton?.addEventListener('click', () => {
+            submitFinishResult().catch((error) => {
+                console.error('Rhythm leaderboard submit handler failed:', error);
+            });
+        });
         finishRetryButton?.addEventListener('click', () => {
             pendingFinishResult = null;
             closeFinishModal();
@@ -1733,7 +1837,9 @@ export function createRhythmGameModule({
     configureChart();
     buildNotes();
     bindControls();
-    renderLeaderboardEntries();
+    initializeLeaderboard().catch((error) => {
+        console.error('Rhythm leaderboard init handler failed:', error);
+    });
     resetRun();
 
     return {
