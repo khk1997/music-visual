@@ -18,10 +18,16 @@ const JUDGEMENT_VISIBLE_MS = 680;
 const JUDGEMENT_PERFECT_REPLAY_GAP_MS = 240;
 const JUDGEMENT_OTHER_REPLAY_GAP_MS = 120;
 const RHYTHM_TRACK_URL = new URL('../../../music/1-1.mp3', import.meta.url).href;
-const RHYTHM_TRACK_OFFSET_SECONDS = -0.87;
+const RHYTHM_TRACK_BASE_OFFSET_SECONDS = -0.08;
 const RHYTHM_CHART_INTRO_SKIP_BEATS = 8;
+const RHYTHM_TAIL_TRIM_NOTE_COUNT = 7;
+const RHYTHM_END_TRIM_GRACE_SECONDS = 0.22;
 let rhythmTrackDurationSeconds = 0;
 let rhythmAudibleWindow = { start: 0, end: 0 };
+
+function getRhythmTrackOffsetSeconds() {
+    return RHYTHM_TRACK_BASE_OFFSET_SECONDS;
+}
 
 function createRhythmChart(trackDurationSeconds = 0) {
     const bpm = 150;
@@ -112,9 +118,15 @@ function createRhythmChart(trackDurationSeconds = 0) {
         const template = templates[sectionIndex % templates.length];
         const laneShift = laneShiftTable[sectionIndex % laneShiftTable.length];
         const mirror = sectionIndex % 3 === 2;
+        const isTailPhrase = sectionIndex === sectionCount - 2;
 
         for (const entry of template) {
-            const beat = startBeat + entry.beat;
+            const tailAdjustedBeat = isTailPhrase && entry.beat === 1.5
+                ? 1
+                : isTailPhrase && entry.beat === 3
+                    ? 2
+                    : entry.beat;
+            const beat = startBeat + tailAdjustedBeat;
             if (beat >= totalBeats) continue;
 
             let lane = entry.lane;
@@ -142,11 +154,17 @@ function createRhythmChart(trackDurationSeconds = 0) {
     }
 
     notes.sort((a, b) => a.beat - b.beat || a.lane - b.lane);
-    notes.splice(-6, 6);
+    notes.splice(-RHYTHM_TAIL_TRIM_NOTE_COUNT, RHYTHM_TAIL_TRIM_NOTE_COUNT);
+
+    if (notes.length > 0) {
+        const finalNote = notes[notes.length - 1];
+        finalNote.type = 'hold';
+        finalNote.durationBeats = 4;
+    }
 
     return {
         bpm,
-        offsetSeconds: RHYTHM_TRACK_OFFSET_SECONDS,
+        offsetSeconds: getRhythmTrackOffsetSeconds(),
         title: '1-1 Adventure Battle',
         notes
     };
@@ -244,10 +262,14 @@ function shouldKeepRhythmNote(noteTime, noteDuration, noteType) {
     }
 
     if (hasEndSilence) {
-        const noteVisibleTail = noteType === 'hold'
-            ? noteTime + noteDuration + TRAVEL_TIME
-            : noteTime + TRAVEL_TIME;
-        if (noteVisibleTail > rhythmAudibleWindow.end) {
+        const noteCutoffTime = (rhythmAudibleWindow.end ?? rhythmTrackDurationSeconds) - RHYTHM_END_TRIM_GRACE_SECONDS;
+        const holdCutoffTime = (rhythmAudibleWindow.end ?? rhythmTrackDurationSeconds) + RHYTHM_END_TRIM_GRACE_SECONDS;
+
+        if (noteTime > noteCutoffTime) {
+            return false;
+        }
+
+        if (noteType === 'hold' && (noteTime + noteDuration) > holdCutoffTime) {
             return false;
         }
     }
