@@ -2657,7 +2657,9 @@
             position: absolute;
             left: 12%;
             width: 76%;
-            min-height: 20px;
+            --rhythm-note-thickness: clamp(23px, 3.1vw, 40px);
+            height: var(--rhythm-note-thickness);
+            min-height: 23px;
             border-radius: 999px;
             background:
                 linear-gradient(90deg, rgba(255,255,255,0.22), rgba(255,255,255,0.04)),
@@ -2679,10 +2681,11 @@
             left: 16%;
             width: 68%;
             min-height: 0;
+            box-sizing: border-box;
             border-radius: 18px 18px 14px 14px;
             background:
-                linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0.02)),
-                linear-gradient(180deg, rgba(255, 217, 113, 0.88), rgba(102, 196, 255, 0.9));
+                linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.04)),
+                linear-gradient(180deg, rgba(255, 220, 126, 0.84), rgba(102, 196, 255, 0.78));
             box-shadow:
                 inset 0 0 0 1px rgba(255,255,255,0.08),
                 0 0 24px rgba(94, 188, 255, 0.18);
@@ -2692,14 +2695,14 @@
         .rhythm-game-note.hold::before {
             content: '';
             position: absolute;
-            left: -10%;
-            right: -10%;
-            bottom: -2px;
-            height: 18px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: var(--rhythm-note-thickness);
             border-radius: 999px;
             background:
-                linear-gradient(90deg, rgba(255,255,255,0.28), rgba(255,255,255,0.04)),
-                linear-gradient(90deg, rgba(255, 224, 132, 0.98), rgba(99, 198, 255, 0.95));
+                linear-gradient(90deg, rgba(255,255,255,0.24), rgba(255,255,255,0.04)),
+                linear-gradient(90deg, rgba(255, 228, 141, 0.98), rgba(100, 198, 255, 0.96));
             box-shadow:
                 0 0 0 1px rgba(255,255,255,0.08),
                 0 0 18px rgba(88, 188, 255, 0.22);
@@ -3125,6 +3128,11 @@
                 bottom: 10px;
                 border-radius: 14px;
                 font-size: 18px;
+            }
+
+            .rhythm-game-note {
+                --rhythm-note-thickness: clamp(21px, 4vw, 32px);
+                min-height: 21px;
             }
 
             .rhythm-game-lane-label {

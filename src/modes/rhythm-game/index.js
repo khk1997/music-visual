@@ -12,7 +12,8 @@ const TRAVEL_TIME = 1.8;
 const LEAD_IN = 1.6;
 const HOLD_VISUAL_GAP_PCT = 5;
 const NOTE_VISUAL_GAP_PCT = 4;
-const TAP_VISUAL_HEIGHT_PCT = 4;
+const TAP_VISUAL_HEIGHT_PCT = 4.5;
+const HOLD_VISUAL_MIN_HEIGHT_PCT = TAP_VISUAL_HEIGHT_PCT;
 const JUDGEMENT_VISIBLE_MS = 680;
 const JUDGEMENT_PERFECT_REPLAY_GAP_MS = 240;
 const JUDGEMENT_OTHER_REPLAY_GAP_MS = 120;
@@ -764,7 +765,7 @@ export function createRhythmGameModule({
             el.dataset.noteId = String(note.id);
 
             if (note.type === 'hold') {
-                const holdPercent = Math.max(14, (note.duration / TRAVEL_TIME) * 100 - HOLD_VISUAL_GAP_PCT);
+                const holdPercent = Math.max(HOLD_VISUAL_MIN_HEIGHT_PCT, (note.duration / TRAVEL_TIME) * 100 - HOLD_VISUAL_GAP_PCT);
                 el.style.height = `${holdPercent}%`;
             }
 
@@ -1496,14 +1497,14 @@ export function createRhythmGameModule({
             const remaining = Math.max(0, note.endTime - runTime);
             return {
                 bottom: 0,
-                height: Math.max(0, (remaining / TRAVEL_TIME) * 100 - HOLD_VISUAL_GAP_PCT),
+                height: Math.max(HOLD_VISUAL_MIN_HEIGHT_PCT, (remaining / TRAVEL_TIME) * 100 - HOLD_VISUAL_GAP_PCT),
                 holdExtra: (note.duration / TRAVEL_TIME) * 100,
                 progress
             };
         }
 
         const height = note.type === 'hold'
-            ? Math.max(0, (note.duration / TRAVEL_TIME) * 100 - HOLD_VISUAL_GAP_PCT)
+            ? Math.max(HOLD_VISUAL_MIN_HEIGHT_PCT, (note.duration / TRAVEL_TIME) * 100 - HOLD_VISUAL_GAP_PCT)
             : TAP_VISUAL_HEIGHT_PCT;
 
         return {
