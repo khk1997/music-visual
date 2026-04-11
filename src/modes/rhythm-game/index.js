@@ -452,6 +452,7 @@ export function createRhythmGameModule({
         playerId = nextId;
         writeStoredJson(PLAYER_ID_STORAGE_KEY, playerId);
         syncPlayerIdFields(playerId);
+        updateFinishUploadButtonState();
         return playerId;
     }
 
@@ -694,19 +695,16 @@ export function createRhythmGameModule({
 
         input.addEventListener('input', () => {
             savePlayerId(input.value);
-
         });
 
         input.addEventListener('blur', () => {
             input.value = savePlayerId(input.value);
-
         });
 
         input.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
                 event.preventDefault();
                 input.value = savePlayerId(input.value);
-
                 input.blur();
             }
         });
