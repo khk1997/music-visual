@@ -2949,7 +2949,7 @@
 
         .rhythm-game-finish-stats {
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 10px;
             margin-top: 18px;
         }
@@ -3090,6 +3090,10 @@
             .rhythm-game-footer,
             .rhythm-game-results {
                 grid-template-columns: 1fr;
+            }
+
+            .rhythm-game-finish-stats {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
             }
 
             .rhythm-game-stat-grid,
@@ -4135,6 +4139,18 @@
                         <div class="rhythm-game-finish-stat">
                             <div class="rhythm-game-finish-stat-label">Accuracy</div>
                             <div class="rhythm-game-finish-stat-value" id="rg-finish-accuracy-value">0%</div>
+                        </div>
+                        <div class="rhythm-game-finish-stat">
+                            <div class="rhythm-game-finish-stat-label">Perfect</div>
+                            <div class="rhythm-game-finish-stat-value" id="rg-finish-perfect-value">0</div>
+                        </div>
+                        <div class="rhythm-game-finish-stat">
+                            <div class="rhythm-game-finish-stat-label">Good</div>
+                            <div class="rhythm-game-finish-stat-value" id="rg-finish-good-value">0</div>
+                        </div>
+                        <div class="rhythm-game-finish-stat">
+                            <div class="rhythm-game-finish-stat-label">Miss</div>
+                            <div class="rhythm-game-finish-stat-value" id="rg-finish-miss-value">0</div>
                         </div>
                     </div>
 

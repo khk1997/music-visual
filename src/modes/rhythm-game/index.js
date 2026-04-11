@@ -342,6 +342,9 @@ export function createRhythmGameModule({
     const finishResultValue = document.getElementById('rg-finish-result-value');
     const finishComboValue = document.getElementById('rg-finish-combo-value');
     const finishAccuracyValue = document.getElementById('rg-finish-accuracy-value');
+    const finishPerfectValue = document.getElementById('rg-finish-perfect-value');
+    const finishGoodValue = document.getElementById('rg-finish-good-value');
+    const finishMissValue = document.getElementById('rg-finish-miss-value');
     const finishPlayerIdInput = document.getElementById('rg-finish-player-id-input');
     const finishUploadButton = document.getElementById('rg-finish-upload-button');
     const finishRetryButton = document.getElementById('rg-finish-retry-button');
@@ -1006,6 +1009,9 @@ export function createRhythmGameModule({
         if (finishResultValue) finishResultValue.textContent = grade;
         if (finishComboValue) finishComboValue.textContent = String(finalCombo);
         if (finishAccuracyValue) finishAccuracyValue.textContent = `${accuracy}%`;
+        if (finishPerfectValue) finishPerfectValue.textContent = String(perfectCount);
+        if (finishGoodValue) finishGoodValue.textContent = String(goodCount);
+        if (finishMissValue) finishMissValue.textContent = String(missCount);
         if (finishCopy) {
             finishCopy.textContent = '這局的結果已經算好了。現在輸入 ID，按上傳就會進排行榜。' + (biasLabel ? ` 你的節奏偏向 ${biasLabel}。` : '');
         }
