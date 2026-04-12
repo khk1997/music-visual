@@ -729,12 +729,13 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
             modeScreen.classList.toggle('hidden', !isHome);
             playbackScreen.classList.toggle('active', isExperienceScreen);
             playbackScreen.classList.toggle('theme-selecting', isFreePlay && isFreePlayThemeSelection);
+            playbackScreen.classList.toggle('rhythm-level-selecting', isRhythmGame && typeof rhythmGame.isLevelSelecting === 'function' && rhythmGame.isLevelSelecting());
             playbackScreen.classList.toggle('rhythm-progress-active', isRhythmGame);
             playbackScreen.classList.toggle('rhythm-stats-active', isRhythmGame);
             bottomUi.classList.toggle('hidden', !isFreePlay || isFreePlayThemeSelection);
             absolutePitchUi.classList.toggle('active', isAbsolutePitch);
             rhythmGameUi.classList.toggle('active', isRhythmGame);
-            document.querySelector('.rhythm-game-leaderboard')?.classList.toggle('is-visible', isRhythmGame);
+            document.querySelector('.rhythm-game-leaderboard')?.classList.toggle('is-visible', isRhythmGame && !(typeof rhythmGame.isLevelSelecting === 'function' && rhythmGame.isLevelSelecting()));
             backgroundToggleButton.classList.toggle('ui-hidden', !isFreePlay || isFreePlayThemeSelection);
             recordToggleButton.classList.toggle('ui-hidden', !isFreePlay || isFreePlayThemeSelection);
             playbackToggleButton.classList.toggle('ui-hidden', !isFreePlay || isFreePlayThemeSelection);
@@ -750,7 +751,7 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
                 : isAbsolutePitch
                 ? 'Perfect Pitch'
                 : isRhythmGame
-                    ? 'Rhythm Game'
+                    ? (typeof rhythmGame.getModeStatusText === 'function' ? rhythmGame.getModeStatusText() : 'Rhythm Game')
                     : 'Free Play';
             document.body.style.cursor = isFreePlay && !isFreePlayThemeSelection ? 'crosshair' : 'default';
             updateThemePanelSelection();

@@ -22,6 +22,14 @@ const RHYTHM_TRACK_BASE_OFFSET_SECONDS = -0.08;
 const RHYTHM_CHART_INTRO_SKIP_BEATS = 8;
 const RHYTHM_TAIL_TRIM_NOTE_COUNT = 7;
 const RHYTHM_END_TRIM_GRACE_SECONDS = 0.22;
+const RHYTHM_LEVELS = [
+    { id: '1-1', label: '1-1', title: '1-1', description: '入門節奏，先熟悉下落速度與按鍵節拍。' },
+    { id: '1-2', label: '1-2', title: '1-2', description: '加一點連段感，開始讀左右切換。' },
+    { id: '1-3', label: '1-3', title: '1-3', description: '節奏密度再往上，練習穩定判定。' },
+    { id: '1-4', label: '1-4', title: '1-4', description: '加入較長的 hold note，測試尾端控制。' },
+    { id: '1-5', label: '1-5', title: '1-5', description: '更多變化組合，適合熟悉手感後推進。' },
+    { id: '1-6', label: '1-6', title: '1-6', description: '目前先放占位關卡，後續可接真正譜面。' }
+];
 let rhythmTrackDurationSeconds = 0;
 let rhythmAudibleWindow = { start: 0, end: 0 };
 
@@ -29,7 +37,7 @@ function getRhythmTrackOffsetSeconds() {
     return RHYTHM_TRACK_BASE_OFFSET_SECONDS;
 }
 
-function createRhythmChart(trackDurationSeconds = 0) {
+function createRhythmChart(trackDurationSeconds = 0, level = RHYTHM_LEVELS[0]) {
     const bpm = 150;
     const secondsPerBeat = 60 / bpm;
     const safeDuration = Number.isFinite(trackDurationSeconds) && trackDurationSeconds > 0
@@ -165,7 +173,7 @@ function createRhythmChart(trackDurationSeconds = 0) {
     return {
         bpm,
         offsetSeconds: getRhythmTrackOffsetSeconds(),
-        title: '1-1 Adventure Battle',
+        title: `${level?.label ?? '1-1'} Adventure Battle`,
         notes
     };
 }
@@ -354,6 +362,12 @@ export function createRhythmGameModule({
     const statusCopy = document.getElementById('rg-status-copy');
     const judgementValue = document.getElementById('rg-judgement-value');
     const sessionHint = document.getElementById('rg-session-hint');
+    const levelPanel = document.getElementById('rhythm-level-panel');
+    const levelList = document.getElementById('rhythm-level-list');
+    const levelPreviewTitle = document.getElementById('rhythm-level-preview-title');
+    const levelPreviewDescription = document.getElementById('rhythm-level-preview-description');
+    const levelLeaderboardList = document.getElementById('rhythm-level-leaderboard-list');
+    const levelLeaderboardMode = document.getElementById('rhythm-level-leaderboard-mode');
     const results = document.getElementById('rg-results');
     const resultGrade = document.getElementById('rg-result-grade');
     const resultBias = document.getElementById('rg-result-bias');
@@ -374,7 +388,14 @@ export function createRhythmGameModule({
     const finishNote = document.getElementById('rg-finish-note');
     const leaderboardList = document.getElementById('rg-leaderboard-list');
     const leaderboardMode = document.getElementById('rg-leaderboard-mode');
+    const playbackScreen = document.getElementById('playback-screen');
+    const rhythmGameLeaderboard = container.querySelector('.rhythm-game-leaderboard');
     const playerIdInput = document.getElementById('rg-player-id-input');
+    const rhythmGameControls = container.querySelector('.rhythm-game-controls');
+    const rhythmJudgementLayer = container.querySelector('.rhythm-game-judgement-layer');
+    const rhythmGameLanes = container.querySelector('.rhythm-game-lanes');
+    const rhythmGameEndActions = container.querySelector('.rhythm-game-end-actions');
+    const legacyUi = document.getElementById('rg-legacy-ui');
     const laneElements = Array.from(container.querySelectorAll('.rhythm-game-lane'));
     const laneRailElements = laneElements.map((lane) => lane.querySelector('.rhythm-game-lane-rail'));
 
@@ -393,6 +414,7 @@ export function createRhythmGameModule({
     let rhythmTrackStartTime = null;
     let isActive = false;
     let isRunning = false;
+    let isLevelSelecting = true;
     let runStartAt = 0;
     let animationFrameId = null;
     let autoStartTimerId = null;
@@ -414,6 +436,11 @@ export function createRhythmGameModule({
     let judgementLastShownAt = 0;
     let pendingFinishResult = null;
     let isFinishModalOpen = false;
+    let selectedLevelIndex = 0;
+    let levelDragState = null;
+    let isLevelSelectionTransitioning = false;
+    let levelClickSynth = null;
+    const levelSelectionTransitionTimers = [];
     const LEADERBOARD_LIMIT = 10;
     const LEADERBOARD_STORAGE_KEY = 'visual-music-game.rhythm.leaderboard.v3';
     const LEGACY_LEADERBOARD_STORAGE_KEY = 'visual-music-game.rhythm.leaderboard.v1';
@@ -497,6 +524,179 @@ export function createRhythmGameModule({
         }
     }
 
+    function getSelectedLevel() {
+        return RHYTHM_LEVELS[Math.max(0, Math.min(RHYTHM_LEVELS.length - 1, selectedLevelIndex))] ?? RHYTHM_LEVELS[0];
+    }
+
+    function ensureLevelClickSynth() {
+        if (levelClickSynth) return levelClickSynth;
+
+        levelClickSynth = new Tone.Synth({
+            oscillator: { type: 'triangle' },
+            envelope: {
+                attack: 0.002,
+                decay: 0.07,
+                sustain: 0,
+                release: 0.08
+            }
+        }).toDestination();
+
+        levelClickSynth.volume.value = -14;
+        return levelClickSynth;
+    }
+
+    function prewarmLevelSelectionAudio() {
+        void initAudio();
+        ensureLevelClickSynth();
+    }
+
+    async function playLevelClickSound() {
+        try {
+            await initAudio();
+            const clickSynth = ensureLevelClickSynth();
+            const triggerTime = typeof Tone.immediate === 'function' ? Tone.immediate() : Tone.now();
+            clickSynth.triggerAttackRelease('E5', 0.09, triggerTime);
+            clickSynth.triggerAttackRelease('B5', 0.07, triggerTime + 0.045);
+        } catch (error) {
+            console.error('Rhythm level click sound failed:', error);
+        }
+    }
+
+    function clearLevelSelectionTransitionTimers() {
+        while (levelSelectionTransitionTimers.length) {
+            clearTimeout(levelSelectionTransitionTimers.pop());
+        }
+    }
+
+    function resetLevelSelectionVisualState() {
+        clearLevelSelectionTransitionTimers();
+        isLevelSelectionTransitioning = false;
+        if (!levelPanel) return;
+        levelPanel.classList.remove('is-transitioning', 'is-exiting');
+        if (!levelList) return;
+        const buttons = levelList.querySelectorAll('.theme-list-item');
+        for (const button of buttons) {
+            button.classList.remove('is-selected', 'is-muted', 'is-active', 'is-faded');
+            button.style.removeProperty('transform');
+            button.style.removeProperty('opacity');
+            button.style.removeProperty('filter');
+            button.style.removeProperty('z-index');
+        }
+    }
+
+    function setLevelSelectionVisible(visible) {
+        isLevelSelecting = visible;
+        panel.classList.toggle('level-selecting', visible);
+        levelPanel?.classList.toggle('is-open', visible);
+        levelPanel?.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        playbackScreen?.classList.toggle('rhythm-level-selecting', visible);
+        rhythmGameControls?.classList.toggle('ui-hidden', visible);
+        rhythmJudgementLayer?.classList.toggle('ui-hidden', visible);
+        rhythmGameLanes?.classList.toggle('ui-hidden', visible);
+        rhythmGameEndActions?.classList.toggle('ui-hidden', visible);
+        rhythmGameLeaderboard?.classList.toggle('is-visible', !visible);
+        legacyUi?.setAttribute('aria-hidden', visible ? 'true' : 'false');
+        if (visible) {
+            resetLevelSelectionVisualState();
+            panel.classList.remove('playing', 'finished');
+            updateLevelPanelSelection();
+        }
+    }
+
+    function updateLevelListVisuals(activeIndex) {
+        if (!levelList) return;
+
+        const levelButtons = levelList.querySelectorAll('.theme-list-item');
+        for (const button of levelButtons) {
+            const buttonIndex = Number(button.dataset.levelIndex);
+            const offset = buttonIndex - activeIndex;
+            const absOffset = Math.abs(offset);
+            const clampedOffset = Math.max(-3, Math.min(3, offset));
+            const translateY = clampedOffset * 96;
+            const rotateX = clampedOffset * -16;
+            const scale = 1 - Math.min(absOffset, 3) * 0.08;
+            const opacity = absOffset === 0
+                ? 1
+                : absOffset === 1
+                    ? 0.78
+                    : absOffset === 2
+                        ? 0.32
+                        : 0.08;
+
+            button.style.transform = `translateY(${translateY}px) rotateX(${rotateX}deg) scale(${scale})`;
+            button.style.opacity = String(absOffset > 3 ? 0 : opacity);
+            button.style.filter = absOffset === 0
+                ? 'brightness(1.03)'
+                : `blur(${Math.min(absOffset, 3) * 0.65}px) brightness(${1 - Math.min(absOffset, 3) * 0.08})`;
+            button.style.zIndex = String(30 - Math.min(absOffset, 30));
+            button.classList.toggle('is-faded', absOffset > 2);
+            button.classList.toggle('is-active', buttonIndex === activeIndex);
+            button.parentElement?.style.setProperty('z-index', String(30 - Math.min(absOffset, 30)));
+        }
+    }
+
+    function setLevelPanelActiveIndex(index) {
+        const boundedIndex = Math.max(0, Math.min(RHYTHM_LEVELS.length - 1, index));
+        selectedLevelIndex = boundedIndex;
+        updateLevelPanelSelection();
+    }
+
+    function updateLevelPanelSelection() {
+        const selectedLevel = getSelectedLevel();
+
+        if (levelPreviewTitle) {
+            levelPreviewTitle.textContent = `關卡 ${selectedLevel.label}`;
+        }
+
+        if (levelPreviewDescription) {
+            levelPreviewDescription.textContent = `${selectedLevel.description} 點一次選擇，點兩次或按 Enter 就能直接開始。`;
+        }
+
+        if (levelLeaderboardMode) {
+            levelLeaderboardMode.textContent = `${selectedLevel.label} 排行榜`;
+        }
+
+        if (!levelList) return;
+
+        const items = Array.from(levelList.querySelectorAll('.theme-list-item'));
+        for (const item of items) {
+            const itemIndex = Number(item.dataset.levelIndex);
+            item.classList.toggle('is-selected', itemIndex === selectedLevelIndex);
+            item.classList.toggle('is-active', itemIndex === selectedLevelIndex);
+            item.classList.toggle('is-muted', isLevelSelectionTransitioning && itemIndex !== selectedLevelIndex);
+            item.setAttribute('aria-pressed', itemIndex === selectedLevelIndex ? 'true' : 'false');
+            item.setAttribute('aria-label', `關卡 ${RHYTHM_LEVELS[itemIndex]?.label ?? ''}`);
+        }
+
+        updateLevelListVisuals(selectedLevelIndex);
+    }
+
+    function renderLevelPanel() {
+        if (!levelList) return;
+
+        levelList.innerHTML = '';
+
+        RHYTHM_LEVELS.forEach((level, index) => {
+            const li = document.createElement('li');
+            li.className = 'theme-list-slot';
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'theme-list-item';
+            button.dataset.levelIndex = String(index);
+            button.textContent = level.label;
+            button.addEventListener('focus', () => {
+                selectedLevelIndex = index;
+                updateLevelPanelSelection();
+            });
+
+            li.appendChild(button);
+            levelList.appendChild(li);
+        });
+
+        updateLevelPanelSelection();
+    }
+
     function loadLocalLeaderboardEntries() {
         const storedEntries = readStoredJson(LEADERBOARD_STORAGE_KEY, []);
         if (!Array.isArray(storedEntries)) {
@@ -522,7 +722,7 @@ export function createRhythmGameModule({
                         .map(normalizeLeaderboardEntry)
                         .sort(compareLeaderboardEntries)
                         .slice(0, LEADERBOARD_LIMIT);
-                    renderLeaderboardEntries();
+                    renderAllLeaderboards();
                     setLeaderboardModeLabel('Supabase live');
                     return leaderboardEntries;
                 }
@@ -533,7 +733,7 @@ export function createRhythmGameModule({
         }
 
         leaderboardEntries = loadLocalLeaderboardEntries();
-        renderLeaderboardEntries();
+        renderAllLeaderboards();
         if (!leaderboardService.isConfigured()) {
             setLeaderboardModeLabel('Local leaderboard');
         }
@@ -542,7 +742,7 @@ export function createRhythmGameModule({
 
     async function initializeLeaderboard() {
         leaderboardEntries = loadLocalLeaderboardEntries();
-        renderLeaderboardEntries();
+        renderAllLeaderboards();
 
         if (!leaderboardService.isConfigured()) {
             setLeaderboardModeLabel('Local leaderboard');
@@ -563,8 +763,8 @@ export function createRhythmGameModule({
         }
     }
 
-    function configureChart(trackDurationSeconds = 0) {
-        chart = createRhythmChart(trackDurationSeconds);
+    function configureChart(trackDurationSeconds = 0, level = getSelectedLevel()) {
+        chart = createRhythmChart(trackDurationSeconds, level);
         chartSecondsPerBeat = 60 / chart.bpm;
         chartDuration = chart.notes.reduce((maxTime, note) => Math.max(maxTime, ((note.beat ?? 0) + (note.durationBeats ?? 0)) * chartSecondsPerBeat), 0);
         maxPossibleScore = chart.notes.reduce((total, note) => {
@@ -591,12 +791,12 @@ export function createRhythmGameModule({
         };
     }
 
-    function renderLeaderboardEntries() {
+    function renderLeaderboardEntries(targetList = leaderboardList) {
 
-        if (!leaderboardList) return;
+        if (!targetList) return;
 
         if (leaderboardEntries.length === 0) {
-            leaderboardList.replaceChildren();
+            targetList.replaceChildren();
             const emptyRow = document.createElement('div');
             emptyRow.className = 'rhythm-game-leaderboard-row is-empty';
 
@@ -620,7 +820,7 @@ export function createRhythmGameModule({
             emptyResult.textContent = '-';
 
             emptyRow.append(emptyRank, emptyId, emptyScore, emptySpacer, emptyResult);
-            leaderboardList.append(emptyRow);
+            targetList.append(emptyRow);
             return;
         }
 
@@ -660,7 +860,12 @@ export function createRhythmGameModule({
             return row;
         });
 
-        leaderboardList.replaceChildren(...rows);
+        targetList.replaceChildren(...rows);
+    }
+
+    function renderAllLeaderboards() {
+        renderLeaderboardEntries(leaderboardList);
+        renderLeaderboardEntries(levelLeaderboardList);
     }
 
     async function recordLeaderboardEntry(scoreValue, resultValue) {
@@ -676,7 +881,7 @@ export function createRhythmGameModule({
                 .sort(compareLeaderboardEntries)
                 .slice(0, LEADERBOARD_LIMIT);
             saveLocalLeaderboardEntries(leaderboardEntries);
-            renderLeaderboardEntries();
+            renderAllLeaderboards();
             return { source: 'local' };
         }
 
@@ -738,7 +943,7 @@ export function createRhythmGameModule({
     clearLegacyLeaderboardStorage();
     playerId = loadPlayerId();
     leaderboardEntries = loadLocalLeaderboardEntries();
-    renderLeaderboardEntries();
+    renderAllLeaderboards();
 
     function buildNotes() {
         notes = chart.notes.map((note, index) => {
@@ -1330,6 +1535,43 @@ export function createRhythmGameModule({
             });
         }, 1200);
     }
+
+    async function startSelectedLevel() {
+        if (isLevelSelectionTransitioning) return;
+
+        const level = getSelectedLevel();
+        selectedLevelIndex = Math.max(0, Math.min(RHYTHM_LEVELS.length - 1, selectedLevelIndex));
+        if (document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur();
+        }
+
+        updateLevelPanelSelection();
+        configureChart(0, level);
+        isLevelSelectionTransitioning = true;
+        levelPanel?.classList.add('is-transitioning');
+
+        levelSelectionTransitionTimers.push(window.setTimeout(() => {
+            if (!levelPanel) return;
+            levelPanel.classList.add('is-exiting');
+        }, 300));
+
+        levelSelectionTransitionTimers.push(window.setTimeout(async () => {
+            setLevelSelectionVisible(false);
+            resetLevelSelectionVisualState();
+            try {
+                await startRun();
+            } catch (error) {
+                setLevelSelectionVisible(true);
+                throw error;
+            }
+        }, 760));
+    }
+
+    async function restartSelectedLevel() {
+        resetRun();
+        return startSelectedLevel();
+    }
+
     function disposeInstrument() {
         disposeLofiChain(rhythmLofiVibrato, rhythmLofiFilter);
         if (rhythmInstrument && typeof rhythmInstrument.dispose === 'function') {
@@ -1623,6 +1865,7 @@ export function createRhythmGameModule({
         clearAutoStartTimer();
         resetNoteState();
         isRunning = true;
+        setLevelSelectionVisible(false);
         panel.classList.add('playing');
         results.classList.remove('active');
         runStartAt = nowSeconds() + LEAD_IN;
@@ -1646,11 +1889,14 @@ export function createRhythmGameModule({
         activeHoldNotes.clear();
         resetNoteState();
         updateProgressBar(-LEAD_IN);
+        setLevelSelectionVisible(true);
     }
 
     function activate() {
         isActive = true;
-        if (!isRunning) {
+        setLevelSelectionVisible(true);
+        updateLevelPanelSelection();
+        if (!isRunning && !isLevelSelecting) {
             if (judgementValue) {
                 if (judgementHideTimerId !== null) {
                     window.clearTimeout(judgementHideTimerId);
@@ -1683,6 +1929,7 @@ export function createRhythmGameModule({
         closeFinishModal();
         panel.classList.remove('playing');
         panel.classList.remove('finished');
+        setLevelSelectionVisible(false);
         clearLaneFlashes();
         updateProgressBar(-LEAD_IN);
         stopLoop();
@@ -1714,6 +1961,7 @@ export function createRhythmGameModule({
 
         if (isFinishModalOpen) return false;
         if (isTypingInTextField(event)) return false;
+        if (!isRunning && isLevelSelecting) return false;
 
         event.preventDefault();
         if (!isActive) return true;
@@ -1762,6 +2010,7 @@ export function createRhythmGameModule({
 
         if (isFinishModalOpen) return false;
         if (isTypingInTextField(event)) return false;
+        if (!isRunning && isLevelSelecting) return false;
 
         event.preventDefault();
         if (!isActive || !isRunning) return true;
@@ -1839,6 +2088,114 @@ export function createRhythmGameModule({
             });
         });
 
+        levelList?.addEventListener('pointerdown', (event) => {
+            if (!(event.target instanceof HTMLElement)) return;
+            const button = event.target.closest('.theme-list-item');
+            if (!button) return;
+
+            prewarmLevelSelectionAudio();
+            levelDragState = {
+                pointerId: event.pointerId,
+                startY: event.clientY,
+                startIndex: selectedLevelIndex,
+                dragged: false,
+                targetIndex: Number(button.dataset.levelIndex ?? -1),
+                targetWasActive: button.classList.contains('is-active')
+            };
+            levelList.setPointerCapture(event.pointerId);
+        });
+
+        levelList?.addEventListener('pointermove', (event) => {
+            if (!levelDragState || levelDragState.pointerId !== event.pointerId) return;
+            const deltaY = event.clientY - levelDragState.startY;
+            if (Math.abs(deltaY) > 10) {
+                levelDragState.dragged = true;
+            }
+
+            const nextIndex = Math.max(
+                0,
+                Math.min(
+                    RHYTHM_LEVELS.length - 1,
+                    levelDragState.startIndex - Math.round(deltaY / 86)
+                )
+            );
+
+            if (nextIndex !== selectedLevelIndex) {
+                setLevelPanelActiveIndex(nextIndex);
+            }
+        });
+
+        const finishLevelDrag = (event) => {
+            if (!levelDragState || levelDragState.pointerId !== event.pointerId) return;
+
+            if (levelDragState.dragged) {
+                // No-op here; a drag only repositions the stack.
+            } else if (
+                levelDragState.targetIndex >= 0
+                && levelDragState.targetIndex !== selectedLevelIndex
+            ) {
+                setLevelPanelActiveIndex(levelDragState.targetIndex);
+            } else if (
+                levelDragState.targetIndex >= 0
+                && levelDragState.targetWasActive
+                && selectedLevelIndex === levelDragState.targetIndex
+            ) {
+                void playLevelClickSound();
+                startSelectedLevel().catch((error) => {
+                    console.error('Rhythm level start failed:', error);
+                });
+            }
+
+            if (levelList.hasPointerCapture(event.pointerId)) {
+                levelList.releasePointerCapture(event.pointerId);
+            }
+            levelDragState = null;
+        };
+
+        levelList?.addEventListener('pointerup', finishLevelDrag);
+        levelList?.addEventListener('pointercancel', finishLevelDrag);
+
+        levelList?.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            const activeButton = document.activeElement;
+            if (!(activeButton instanceof HTMLElement)) return;
+            const button = activeButton.closest('.theme-list-item');
+            if (!button) return;
+
+            event.preventDefault();
+            prewarmLevelSelectionAudio();
+            const buttonIndex = Number(button.dataset.levelIndex ?? -1);
+            if (buttonIndex < 0) return;
+
+            if (buttonIndex === selectedLevelIndex) {
+                void playLevelClickSound();
+                startSelectedLevel().catch((error) => {
+                    console.error('Rhythm level start failed:', error);
+                });
+                return;
+            }
+
+            setLevelPanelActiveIndex(buttonIndex);
+        });
+
+        levelList?.addEventListener('wheel', (event) => {
+            event.preventDefault();
+            if (!isLevelSelecting) return;
+
+            const direction = event.deltaY > 0 ? 1 : -1;
+            if (direction === 0) return;
+
+            const nextIndex = Math.max(
+                0,
+                Math.min(RHYTHM_LEVELS.length - 1, selectedLevelIndex + direction)
+            );
+
+            if (nextIndex !== selectedLevelIndex) {
+                selectedLevelIndex = nextIndex;
+                updateLevelPanelSelection();
+            }
+        }, { passive: false });
+
         finishUploadButton?.addEventListener('click', () => {
             submitFinishResult().catch((error) => {
                 console.error('Rhythm leaderboard submit handler failed:', error);
@@ -1847,7 +2204,9 @@ export function createRhythmGameModule({
         finishRetryButton?.addEventListener('click', () => {
             pendingFinishResult = null;
             closeFinishModal();
-            resetRun();
+            restartSelectedLevel().catch((error) => {
+                console.error('Rhythm level restart failed:', error);
+            });
         });
         finishBackdrop?.addEventListener('click', () => {
             focusFinishPlayerIdInput(true);
@@ -1861,6 +2220,7 @@ export function createRhythmGameModule({
         });
     }
 
+    renderLevelPanel();
     configureChart();
     buildNotes();
     bindControls();
@@ -1875,7 +2235,19 @@ export function createRhythmGameModule({
         disposeInstrument,
         handleKeyDown,
         handleKeyUp,
-        reset: resetRun
+        reset: resetRun,
+        getModeStatusText() {
+            if (isLevelSelecting) {
+                return '關卡選擇';
+            }
+            if (isRunning) {
+                return chart.title;
+            }
+            return `關卡 ${getSelectedLevel().label}`;
+        },
+        isLevelSelecting() {
+            return isLevelSelecting;
+        }
     };
 }
 
