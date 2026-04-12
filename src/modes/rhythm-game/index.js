@@ -477,6 +477,7 @@ export function createRhythmGameModule({
         'visual-music-game.rhythm.leaderboard.v3',
         'visual-music-game.rhythm.leaderboard.v1'
     ];
+    const LOCAL_LEADERBOARD_RESET_FLAG = 'visual-music-game.rhythm.leaderboard.reset-v1';
     const PLAYER_ID_STORAGE_KEY = 'visual-music-game.rhythm.player-id.v1';
     let playerId = '';
     const leaderboardEntriesByLevel = new Map();
@@ -511,6 +512,28 @@ export function createRhythmGameModule({
             }
         } catch {
             // Ignore storage cleanup failures; the in-memory leaderboard still resets.
+        }
+    }
+
+    function clearCurrentLevelOneLeaderboardStorage() {
+        try {
+            window.localStorage.removeItem(getLeaderboardStorageKey('1-1'));
+            leaderboardEntriesByLevel.delete('1-1');
+        } catch {
+            // Ignore storage cleanup failures; the in-memory leaderboard still resets.
+        }
+    }
+
+    function runOneTimeLocalLeaderboardReset() {
+        try {
+            if (window.localStorage.getItem(LOCAL_LEADERBOARD_RESET_FLAG) === 'done') {
+                return;
+            }
+
+            clearCurrentLevelOneLeaderboardStorage();
+            window.localStorage.setItem(LOCAL_LEADERBOARD_RESET_FLAG, 'done');
+        } catch {
+            // If storage is unavailable, just continue with the in-memory state.
         }
     }
 
@@ -1047,6 +1070,7 @@ export function createRhythmGameModule({
     bindPlayerIdField(finishPlayerIdInput);
 
     clearLegacyLeaderboardStorage();
+    runOneTimeLocalLeaderboardReset();
     playerId = loadPlayerId();
     const initialLevelId = getSelectedLevel().id;
     setLeaderboardEntriesForLevel(initialLevelId, loadLocalLeaderboardEntries(initialLevelId));
