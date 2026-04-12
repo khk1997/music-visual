@@ -7,7 +7,8 @@ function normalizeLeaderboardRow(row) {
             : 'Guest',
         score: row && Number.isFinite(Number(row.score)) ? Number(row.score) : 0,
         result: row && typeof row.result === 'string' && row.result.trim() ? row.result.trim() : '-',
-        createdAt: row && row.created_at ? new Date(row.created_at).getTime() : Date.now()
+        createdAt: row && row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+        levelId: row && typeof row.level_id === 'string' && row.level_id.trim() ? row.level_id.trim() : '1-1'
     };
 }
 
@@ -18,7 +19,8 @@ function normalizeEntry(entry) {
             : 'Guest',
         score: entry && Number.isFinite(Number(entry.score)) ? Number(entry.score) : 0,
         result: entry && typeof entry.result === 'string' && entry.result.trim() ? entry.result.trim() : '-',
-        createdAt: entry && Number.isFinite(Number(entry.createdAt)) ? Number(entry.createdAt) : Date.now()
+        createdAt: entry && Number.isFinite(Number(entry.createdAt)) ? Number(entry.createdAt) : Date.now(),
+        levelId: entry && typeof entry.levelId === 'string' && entry.levelId.trim() ? entry.levelId.trim() : '1-1'
     };
 }
 
@@ -44,13 +46,14 @@ export function createSupabaseLeaderboardService({ config = {}, tableName = 'rhy
         return clientPromise;
     }
 
-    async function loadEntries(limit = 10) {
+    async function loadEntries(limit = 10, levelId = '1-1') {
         const client = await getClient();
         if (!client) return null;
 
         const { data, error } = await client
             .from(table)
-            .select('player_id, score, result, created_at')
+            .select('player_id, score, result, created_at, level_id')
+            .eq('level_id', levelId)
             .order('score', { ascending: false })
             .order('created_at', { ascending: false })
             .limit(limit);
@@ -59,16 +62,20 @@ export function createSupabaseLeaderboardService({ config = {}, tableName = 'rhy
         return Array.isArray(data) ? data.map(normalizeLeaderboardRow) : [];
     }
 
-    async function submitEntry(entry) {
+    async function submitEntry(entry, levelId = '1-1') {
         const client = await getClient();
         if (!client) return null;
 
-        const nextEntry = normalizeEntry(entry);
+        const nextEntry = normalizeEntry({
+            ...entry,
+            levelId
+        });
         const payload = {
             player_id: nextEntry.playerId,
             score: nextEntry.score,
             result: nextEntry.result,
-            created_at: new Date(nextEntry.createdAt).toISOString()
+            created_at: new Date(nextEntry.createdAt).toISOString(),
+            level_id: nextEntry.levelId
         };
 
         const { error } = await client.from(table).insert(payload);

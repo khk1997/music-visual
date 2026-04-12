@@ -771,6 +771,14 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
 
         backHomeButton.addEventListener('click', () => {
             void playBackHomeClickSound();
+            if (currentScreen === 'rhythm-game' && typeof rhythmGame.isLevelSelecting === 'function' && rhythmGame.isLevelSelecting()) {
+                setScreen('home');
+                return;
+            }
+            if (currentScreen === 'rhythm-game') {
+                rhythmGame.reset();
+                return;
+            }
             if (currentScreen === 'free-play' && !isFreePlayThemeSelection) {
                 setScreen('free-play', { forceThemeSelection: true });
             } else {

@@ -5,11 +5,18 @@ create extension if not exists pgcrypto;
 
 create table if not exists public.rhythm_leaderboard (
     id uuid primary key default gen_random_uuid(),
+    level_id text not null default '1-1',
     player_id text not null,
     score integer not null default 0,
     result text not null default '-',
     created_at timestamptz not null default now()
 );
+
+alter table public.rhythm_leaderboard
+add column if not exists level_id text not null default '1-1';
+
+create index if not exists rhythm_leaderboard_level_score_idx
+on public.rhythm_leaderboard (level_id, score desc, created_at desc);
 
 alter table public.rhythm_leaderboard enable row level security;
 
