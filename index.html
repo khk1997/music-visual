@@ -444,14 +444,17 @@
 
         .mode-grid {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 18px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 20px;
+            width: min(940px, 100%);
+            margin: 0 auto;
+            align-items: stretch;
         }
 
         .mode-card {
             position: relative;
-            min-height: 286px;
-            padding: 28px 22px 18px;
+            min-height: 304px;
+            padding: 30px 24px 20px;
             border: 1px solid rgba(255,255,255,0.08);
             border-radius: 28px;
             background:
@@ -581,12 +584,6 @@
                 radial-gradient(circle at 84% 18%, rgba(72, 127, 255, 0.18), transparent 22%);
         }
 
-        .mode-card[data-mode="rhythm-game"]::before {
-            background:
-                linear-gradient(180deg, rgba(255,255,255,0.05), transparent 44%),
-                radial-gradient(circle at 84% 18%, rgba(255, 89, 89, 0.18), transparent 22%);
-        }
-
         .mode-card:hover,
         .mode-card:focus-visible {
             transform: translateY(-6px);
@@ -707,10 +704,10 @@
 
         .mode-card-copy {
             margin: 0;
-            min-height: 3.4em;
-            max-width: 29ch;
-            font-size: 14px;
-            line-height: 1.75;
+            min-height: 4.2em;
+            max-width: 32ch;
+            font-size: 15px;
+            line-height: 1.8;
             color: rgba(255,255,255,0.68);
             padding-bottom: 18px;
         }
@@ -733,6 +730,8 @@
             inset: 0;
             pointer-events: none;
             opacity: 0;
+            padding: max(18px, env(safe-area-inset-top, 0px) + 18px) 24px 0;
+            box-sizing: border-box;
             transition: opacity 0.28s ease;
             overflow: hidden;
         }
@@ -3918,8 +3917,8 @@
             }
 
             .mode-card {
-                min-height: 232px;
-                padding: 22px 18px 16px;
+                min-height: 250px;
+                padding: 24px 20px 18px;
             }
 
             #absolute-pitch-ui {
@@ -3991,11 +3990,11 @@
 
         @media (max-width: 1100px) {
             .mode-grid {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
+                width: min(760px, 100%);
             }
 
             .mode-panel {
-                width: min(860px, 100%);
+                width: min(900px, 100%);
             }
 
             .absolute-pitch-header {
@@ -4027,11 +4026,12 @@
 
             .mode-grid {
                 gap: 24px;
+                width: min(1080px, 100%);
             }
 
             .mode-card {
-                min-height: 340px;
-                padding: 28px 26px 22px;
+                min-height: 348px;
+                padding: 32px 28px 24px;
             }
 
             #playback-screen.theme-selecting #theme-panel {
@@ -4092,6 +4092,10 @@
         @media (max-width: 820px) {
             #mode-screen {
                 padding: 24px 18px;
+            }
+
+            #playback-screen {
+                padding: max(12px, env(safe-area-inset-top, 0px) + 12px) 12px 0;
             }
 
             .floating-symbol {
@@ -4331,20 +4335,6 @@
                             <span>15 Notes</span>
                         </div>
                     </button>
-                    <button class="mode-card" id="rhythm-game-card" data-mode="rhythm-game" type="button">
-                        <span class="mode-card-border-glow-blur" aria-hidden="true"></span>
-                        <span class="mode-card-border-glow" aria-hidden="true"></span>
-                        <span class="mode-card-sheen" aria-hidden="true"></span>
-                        <div class="mode-card-body">
-                            <span class="mode-card-label">Mode 03</span>
-                            <h2 class="mode-card-title">節奏遊戲</h2>
-                            <p class="mode-card-copy">先用無音樂 prototype 驗證下落音符、判定手感、節拍器與分數節奏。</p>
-                        </div>
-                        <div class="mode-card-footer">
-                            <span>搶先進入</span>
-                            <span>Prototype</span>
-                        </div>
-                    </button>
                 </div>
             </div>
         </div>
@@ -4360,148 +4350,13 @@
                 <span class="floating-symbol switch symbol-x" style="top: 14%; left: 72%; --size: 58px; --drift-duration: 17s; --pulse-duration: 4.9s; --delay: -9s;">X</span>
                 <span class="floating-symbol switch symbol-y" style="bottom: 20%; left: 26%; --size: 60px; --drift-duration: 21s; --pulse-duration: 6.1s; --delay: -4s;">Y</span>
             </div>
-            <div id="rhythm-hud-stack">
-                <div id="top-bar">
-                    <div id="top-bar-left">
-                        <button id="back-home" class="top-bar-button" type="button">Back</button>
-                        <button id="background-toggle" class="top-bar-button" type="button">Theme: PlayStation Style</button>
-                        <button id="record-toggle" class="top-bar-button" type="button">Record</button>
-                        <button id="playback-toggle" class="top-bar-button" type="button">Playback</button>
-                        <div id="mode-status">Free Play</div>
-                    </div>
-                    <div id="top-bar-rhythm-stats" class="rhythm-game-stat-grid" aria-hidden="true">
-                        <div class="rhythm-game-stat is-score-stat">
-                            <div class="rhythm-game-stat-label">Score</div>
-                            <div class="rhythm-game-stat-value" id="rg-score-value">0</div>
-                        </div>
-                        <div class="rhythm-game-stat is-result-stat">
-                            <div class="rhythm-game-stat-label">Result</div>
-                            <div class="rhythm-game-stat-value" id="rg-result-grade">-</div>
-                        </div>
-                        <div class="rhythm-game-stat is-combo-stat">
-                            <div class="rhythm-game-stat-label">Combo</div>
-                            <div class="rhythm-game-stat-value" id="rg-combo-value">0</div>
-                        </div>
-                        <div class="rhythm-game-stat">
-                            <div class="rhythm-game-stat-label">Accuracy</div>
-                            <div class="rhythm-game-stat-value" id="rg-result-accuracy">0.0%</div>
-                        </div>
-                        <div class="rhythm-game-stat">
-                            <div class="rhythm-game-stat-label">Perfect</div>
-                            <div class="rhythm-game-stat-value" id="rg-perfect-count">0</div>
-                        </div>
-                        <div class="rhythm-game-stat">
-                            <div class="rhythm-game-stat-label">Good</div>
-                            <div class="rhythm-game-stat-value" id="rg-good-count">0</div>
-                        </div>
-                        <div class="rhythm-game-stat">
-                            <div class="rhythm-game-stat-label">Miss</div>
-                            <div class="rhythm-game-stat-value" id="rg-miss-count">0</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="rhythm-progress-hud" aria-hidden="true">
-                    <div class="rhythm-progress-label-row">
-                        <span>Rhythm Progress</span>
-                        <span id="rhythm-progress-text">0%</span>
-                    </div>
-                        <div class="rhythm-progress-track">
-                        <div class="rhythm-progress-fill" id="rhythm-progress-fill"></div>
-                        <div class="rhythm-progress-glow"></div>
-                    </div>
-                </div>
-
-                <aside class="rhythm-game-leaderboard" aria-label="Rhythm game leaderboard">
-                    <div class="rhythm-game-leaderboard-card">
-                        <div class="rhythm-game-leaderboard-header">
-                            <div class="rhythm-game-controls-label">Top 10</div>
-                            <div class="rhythm-game-leaderboard-mode" id="rg-leaderboard-mode">Local leaderboard</div>
-                            <div class="rhythm-game-leaderboard-player">
-                                <label class="rhythm-game-leaderboard-player-label" for="rg-player-id-input">Your ID</label>
-                                <input
-                                    class="rhythm-game-leaderboard-input"
-                                    id="rg-player-id-input"
-                                    type="text"
-                                    inputmode="text"
-                                    autocomplete="nickname"
-                                    maxlength="16"
-                                    placeholder="可輸入中文、英文或數字"
-                                />
-                            </div>
-                        </div>
-                        <div class="rhythm-game-leaderboard-columns" aria-hidden="true">
-                            <span>Rank</span>
-                            <span>ID</span>
-                            <span>Score</span>
-                            <span>Result</span>
-                        </div>
-                        <div class="rhythm-game-leaderboard-list" id="rg-leaderboard-list" aria-live="polite"></div>
-                    </div>
-                </aside>
-            </div>
-            <div class="rhythm-game-finish-modal ui-hidden" id="rg-finish-modal" aria-hidden="true">
-                <div class="rhythm-game-finish-backdrop" id="rg-finish-backdrop"></div>
-                <div class="rhythm-game-finish-card" role="dialog" aria-modal="true" aria-labelledby="rg-finish-title">
-                    <div class="rhythm-game-finish-header">
-                        <div class="rhythm-game-controls-label">Run Complete</div>
-                        <h3 class="rhythm-game-finish-title" id="rg-finish-title">結算完成</h3>
-                        <p class="rhythm-game-finish-copy" id="rg-finish-copy">
-                            先確認這局的成績，再輸入 ID 並上傳排行榜。
-                        </p>
-                    </div>
-
-                    <div class="rhythm-game-finish-stats">
-                        <div class="rhythm-game-finish-stat">
-                            <div class="rhythm-game-finish-stat-label">Score</div>
-                            <div class="rhythm-game-finish-stat-value" id="rg-finish-score-value">0</div>
-                        </div>
-                        <div class="rhythm-game-finish-stat">
-                            <div class="rhythm-game-finish-stat-label">Result</div>
-                            <div class="rhythm-game-finish-stat-value" id="rg-finish-result-value">-</div>
-                        </div>
-                        <div class="rhythm-game-finish-stat">
-                            <div class="rhythm-game-finish-stat-label">Combo</div>
-                            <div class="rhythm-game-finish-stat-value" id="rg-finish-combo-value">0</div>
-                        </div>
-                        <div class="rhythm-game-finish-stat">
-                            <div class="rhythm-game-finish-stat-label">Accuracy</div>
-                            <div class="rhythm-game-finish-stat-value" id="rg-finish-accuracy-value">0%</div>
-                        </div>
-                        <div class="rhythm-game-finish-stat">
-                            <div class="rhythm-game-finish-stat-label">Perfect</div>
-                            <div class="rhythm-game-finish-stat-value" id="rg-finish-perfect-value">0</div>
-                        </div>
-                        <div class="rhythm-game-finish-stat">
-                            <div class="rhythm-game-finish-stat-label">Good</div>
-                            <div class="rhythm-game-finish-stat-value" id="rg-finish-good-value">0</div>
-                        </div>
-                        <div class="rhythm-game-finish-stat">
-                            <div class="rhythm-game-finish-stat-label">Miss</div>
-                            <div class="rhythm-game-finish-stat-value" id="rg-finish-miss-value">0</div>
-                        </div>
-                    </div>
-
-                    <div class="rhythm-game-finish-player">
-                        <label class="rhythm-game-finish-player-label" for="rg-finish-player-id-input">Your ID</label>
-                        <input
-                            class="rhythm-game-finish-input"
-                            id="rg-finish-player-id-input"
-                            type="text"
-                            inputmode="text"
-                            autocomplete="nickname"
-                            maxlength="16"
-                            placeholder="請輸入你的 ID"
-                        />
-                    </div>
-
-                    <div class="rhythm-game-finish-actions">
-                        <button class="rhythm-game-button primary rhythm-game-finish-upload" id="rg-finish-upload-button" type="button">上傳結果</button>
-                        <button class="rhythm-game-button" id="rg-finish-retry-button" type="button">再挑戰一次</button>
-                    </div>
-
-                    <div class="rhythm-game-finish-note" id="rg-finish-note">
-                        如果沒有輸入 ID，按鈕會保持鎖定。
-                    </div>
+            <div id="top-bar">
+                <div id="top-bar-left">
+                    <button id="back-home" class="top-bar-button" type="button">Back</button>
+                    <button id="background-toggle" class="top-bar-button" type="button">Theme: PlayStation Style</button>
+                    <button id="record-toggle" class="top-bar-button" type="button">Record</button>
+                    <button id="playback-toggle" class="top-bar-button" type="button">Playback</button>
+                    <div id="mode-status">Free Play</div>
                 </div>
             </div>
             <div id="theme-panel" aria-hidden="true">
@@ -4652,77 +4507,6 @@
                 </div>
             </div>
 
-            <div id="rhythm-game-ui">
-                <div id="rhythm-level-panel" aria-hidden="true">
-                    <ul class="theme-list rhythm-level-list" id="rhythm-level-list"></ul>
-                    <div class="theme-preview rhythm-level-preview">
-                        <div class="theme-preview-meta">
-                            <div class="theme-preview-header">
-                                <div class="theme-preview-title" id="rhythm-level-preview-title">關卡選擇</div>
-                                <span class="theme-preview-tag">Preview</span>
-                            </div>
-                            <p class="theme-preview-description" id="rhythm-level-preview-description">
-                                左側先選關卡，右側會同步顯示這一關的排行榜。
-                            </p>
-                        </div>
-                        <div class="rhythm-game-leaderboard-card rhythm-level-leaderboard-card">
-                            <div class="rhythm-game-leaderboard-header">
-                                <div class="rhythm-game-controls-label">Top 10</div>
-                                <div class="rhythm-game-leaderboard-mode" id="rhythm-level-leaderboard-mode">關卡排行榜</div>
-                            </div>
-                            <div class="rhythm-game-leaderboard-columns" aria-hidden="true">
-                                <span>Rank</span>
-                                <span>ID</span>
-                                <span>Score</span>
-                                <span>Result</span>
-                            </div>
-                            <div class="rhythm-game-leaderboard-list" id="rhythm-level-leaderboard-list" aria-live="polite"></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="rhythm-game-controls">
-                    <div class="rhythm-game-actions">
-                        <button class="rhythm-game-button primary" id="rg-start-button" type="button">Start Run</button>
-                    </div>
-                </div>
-
-                <div class="rhythm-game-judgement-layer" aria-live="polite" aria-atomic="true">
-                    <div class="rhythm-game-judgement-value" id="rg-judgement-value"></div>
-                </div>
-
-                <div id="rg-legacy-ui" hidden aria-hidden="true">
-                    <div id="rg-accuracy-value"></div>
-                    <div id="rg-progress-value"></div>
-                    <div id="rg-status-copy"></div>
-                    <div id="rg-results"></div>
-                    <div id="rg-result-bias"></div>
-                    <div id="rg-result-combo"></div>
-                </div>
-
-                <div class="rhythm-game-lanes" id="rg-lanes">
-                    <div class="rhythm-game-track-line" aria-hidden="true"></div>
-                    <div class="rhythm-game-lane" data-lane="0">
-                        <div class="rhythm-game-lane-rail"></div>
-                        <div class="rhythm-game-lane-label">Lane 1</div>
-                        <div class="rhythm-game-lane-keycap">D</div>
-                    </div>
-                    <div class="rhythm-game-lane" data-lane="1">
-                        <div class="rhythm-game-lane-rail"></div>
-                        <div class="rhythm-game-lane-label">Lane 2</div>
-                        <div class="rhythm-game-lane-keycap">F</div>
-                    </div>
-                    <div class="rhythm-game-lane" data-lane="2">
-                        <div class="rhythm-game-lane-rail"></div>
-                        <div class="rhythm-game-lane-label">Lane 3</div>
-                        <div class="rhythm-game-lane-keycap">J</div>
-                    </div>
-                    <div class="rhythm-game-lane" data-lane="3">
-                        <div class="rhythm-game-lane-rail"></div>
-                        <div class="rhythm-game-lane-label">Lane 4</div>
-                        <div class="rhythm-game-lane-keycap">K</div>
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
 
@@ -4734,27 +4518,6 @@
         }
     </script>
 
-    <script>
-        // Fill these in with your Supabase project values.
-        // If left blank, the game keeps using the local fallback leaderboard.
-        window.__SUPABASE_CONFIG__ = {
-            url: 'https://bwklgzqxuplywfbmbcel.supabase.co',
-            anonKey: 'sb_publishable_BNL_Gu8ZoeanZ69HQEAV5w_IPgJ5Mxe',
-            leaderboardTable: 'rhythm_leaderboard'
-        };
-    </script>
-
     <script type="module" src="./src/main.js"></script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-

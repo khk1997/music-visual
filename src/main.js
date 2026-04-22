@@ -17,8 +17,6 @@ import {
     playbackScreen,
     playbackToggleButton,
     recordToggleButton,
-    rhythmGameCard,
-    rhythmGameUi,
     soundSelect,
     themeList,
     themePanel,
@@ -39,8 +37,8 @@ import {
     PIANO_SAMPLE_CONFIG,
     SCALE_KEY_MAP
 } from './core/config.js';
+import { createPerfMonitor } from './app/perf-monitor.js';
 import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
-import { createRhythmGameModule } from './modes/rhythm-game/index.js';
 
 // =========================================================
 // 1. 音源設定
@@ -682,8 +680,7 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
             const isHome = nextScreen === 'home';
             const isFreePlay = nextScreen === 'free-play';
             const isAbsolutePitch = nextScreen === 'absolute-pitch';
-            const isRhythmGame = nextScreen === 'rhythm-game';
-            const isExperienceScreen = isFreePlay || isAbsolutePitch || isRhythmGame;
+            const isExperienceScreen = isFreePlay || isAbsolutePitch;
             const enteringFreePlay = isFreePlay && previousScreen !== 'free-play';
 
             if (isFreePlay) {
@@ -711,13 +708,6 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
                 absolutePitch.resetIntro();
             }
 
-            if (isRhythmGame) {
-                rhythmGame.activate();
-            } else {
-                rhythmGame.reset();
-                rhythmGame.deactivate();
-            }
-
             if (isHome) {
                 resetModeTransitionState();
             }
@@ -729,13 +719,8 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
             modeScreen.classList.toggle('hidden', !isHome);
             playbackScreen.classList.toggle('active', isExperienceScreen);
             playbackScreen.classList.toggle('theme-selecting', isFreePlay && isFreePlayThemeSelection);
-            playbackScreen.classList.toggle('rhythm-level-selecting', isRhythmGame && typeof rhythmGame.isLevelSelecting === 'function' && rhythmGame.isLevelSelecting());
-            playbackScreen.classList.toggle('rhythm-progress-active', isRhythmGame);
-            playbackScreen.classList.toggle('rhythm-stats-active', isRhythmGame);
             bottomUi.classList.toggle('hidden', !isFreePlay || isFreePlayThemeSelection);
             absolutePitchUi.classList.toggle('active', isAbsolutePitch);
-            rhythmGameUi.classList.toggle('active', isRhythmGame);
-            document.querySelector('.rhythm-game-leaderboard')?.classList.toggle('is-visible', isRhythmGame && !(typeof rhythmGame.isLevelSelecting === 'function' && rhythmGame.isLevelSelecting()));
             backgroundToggleButton.classList.toggle('ui-hidden', !isFreePlay || isFreePlayThemeSelection);
             recordToggleButton.classList.toggle('ui-hidden', !isFreePlay || isFreePlayThemeSelection);
             playbackToggleButton.classList.toggle('ui-hidden', !isFreePlay || isFreePlayThemeSelection);
@@ -750,9 +735,7 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
                 ? 'Select Theme'
                 : isAbsolutePitch
                 ? 'Perfect Pitch'
-                : isRhythmGame
-                    ? (typeof rhythmGame.getModeStatusText === 'function' ? rhythmGame.getModeStatusText() : 'Rhythm Game')
-                    : 'Free Play';
+                : 'Free Play';
             document.body.style.cursor = isFreePlay && !isFreePlayThemeSelection ? 'crosshair' : 'default';
             updateThemePanelSelection();
         }
@@ -765,20 +748,8 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
             transitionFromHome(absolutePitchCard, 'absolute-pitch');
         });
 
-        rhythmGameCard.addEventListener('click', () => {
-            transitionFromHome(rhythmGameCard, 'rhythm-game');
-        });
-
         backHomeButton.addEventListener('click', () => {
             void playBackHomeClickSound();
-            if (currentScreen === 'rhythm-game' && typeof rhythmGame.isLevelSelecting === 'function' && rhythmGame.isLevelSelecting()) {
-                setScreen('home');
-                return;
-            }
-            if (currentScreen === 'rhythm-game') {
-                rhythmGame.reset();
-                return;
-            }
             if (currentScreen === 'free-play' && !isFreePlayThemeSelection) {
                 setScreen('free-play', { forceThemeSelection: true });
             } else {
@@ -890,15 +861,6 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
 
         const absolutePitch = createAbsolutePitchModule({
             container: absolutePitchUi,
-            createInstrumentInstance,
-            disposeLofiChain,
-            initAudio,
-            nowSeconds,
-            playMidiWithInstrument,
-            playVisualFeedback
-        });
-        const rhythmGame = createRhythmGameModule({
-            container: rhythmGameUi,
             createInstrumentInstance,
             disposeLofiChain,
             initAudio,
@@ -1040,7 +1002,7 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setPixelRatio(window.devicePixelRatio || 1);
         renderer.toneMapping = THREE.ReinhardToneMapping;
         renderer.toneMappingExposure = 2.0;
         document.body.appendChild(renderer.domElement);
@@ -1592,6 +1554,8 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
         }
 
         const deepBlueBarTexture = createDeepBlueBarTexture();
+        const deepBlueJetGeometry = new THREE.PlaneGeometry(1, 1);
+        const deepBlueJetCoreGeometry = new THREE.PlaneGeometry(1, 1);
 
         // =========================================================
         // 7. 背景波紋
@@ -1900,8 +1864,8 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
             return group;
         }
 
-        function updateDeepBlueBarGlow(bar, baseOpacity) {
-            const shimmer = 0.94 + Math.sin(performance.now() * 0.01 + bar.midi * 0.35) * 0.08;
+        function updateDeepBlueBarGlow(bar, baseOpacity, shimmerTime) {
+            const shimmer = 0.94 + Math.sin(shimmerTime + bar.midi * 0.35) * 0.08;
             const visuals = bar.mesh.userData;
             if (!visuals) return;
 
@@ -1964,7 +1928,8 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
                 releaseGrowthSpeed: 0.045,
                 drift: 0,
                 glowBaseOpacity: 0.88,
-                jetPulseTimer: 0.22 + Math.random() * 0.12
+                holdGlowPhase: Math.random() * Math.PI * 2,
+                jetPulseTimer: 0.16 + Math.random() * 0.1
             };
 
             activeDeepBlueBars.push(bar);
@@ -1988,7 +1953,9 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
             liveDeepBlueBars.delete(barKey);
         }
 
-        function updateDeepBlueBars() {
+        function updateDeepBlueBars(deltaSeconds, shimmerTime) {
+            if (activeDeepBlueBars.length === 0) return;
+
             const { height } = getPlaneViewSize(DEEP_BLUE_BAR_PLANE_Z);
             const upperBound = height * 0.5 + 6;
 
@@ -2004,12 +1971,18 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
                     bar.currentHeight = Math.max(bar.baseHeight, bar.topY - bar.entryY);
                     bar.mesh.scale.y = bar.currentHeight / bar.baseHeight;
                     bar.mesh.position.y = bar.entryY + bar.currentHeight * 0.5;
-                    targetGlowBaseOpacity = 0.88;
-
-                    bar.jetPulseTimer -= 1 / 60;
+                    bar.holdGlowPhase += deltaSeconds * 8.2;
+                    const holdPulse = 0.5 + 0.5 * Math.sin(bar.holdGlowPhase);
+                    targetGlowBaseOpacity = 0.86 + holdPulse * 0.18;
+                    bar.jetPulseTimer -= deltaSeconds;
                     if (bar.jetPulseTimer <= 0) {
                         spawnDeepBlueJet({ x: bar.mesh.position.x, y: bar.entryY }, bar.midi, isBlackKeyMidi(bar.midi), true);
-                        bar.jetPulseTimer = 0.3 + Math.random() * 0.18;
+                        const loadLevel = getDeepBlueEffectLoadLevel();
+                        bar.jetPulseTimer = loadLevel === 'heavy'
+                            ? 0.46 + Math.random() * 0.08
+                            : loadLevel === 'warning'
+                            ? 0.3 + Math.random() * 0.08
+                            : 0.2 + Math.random() * 0.08;
                     }
                 } else if (bar.sprouting) {
                     bar.currentHeight = Math.min(bar.targetHeight, bar.currentHeight + bar.releaseGrowthSpeed);
@@ -2027,7 +2000,7 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
                 }
 
                 bar.glowBaseOpacity += (targetGlowBaseOpacity - bar.glowBaseOpacity) * 0.1;
-                updateDeepBlueBarGlow(bar, bar.glowBaseOpacity);
+                updateDeepBlueBarGlow(bar, bar.glowBaseOpacity, shimmerTime);
 
                 if (bar.mesh.position.y > upperBound) {
                     if (deepBlueBarGroup) {
@@ -2050,6 +2023,20 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
         const activeMists = [];
         const activeDeepBlueJets = [];
         let impactIdx = 0;
+
+        const perfMonitor = createPerfMonitor({
+            renderer,
+            getThemeLabel: () => getCurrentBackgroundTheme().label,
+            getPixelRatio: () => renderer.getPixelRatio(),
+            getStateSnapshot: () => ({
+                activeBars: activeDeepBlueBars.length,
+                activeSparks: activeSparks.length,
+                activeMists: activeMists.length,
+                activeJets: activeDeepBlueJets.length,
+                recordedEvents: recordedEvents.length,
+                isPlaybackActive
+            })
+        });
 
         function getEffectColor(midi) {
             const palette = [
@@ -2085,9 +2072,10 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
         function clearActiveDeepBlueJets() {
             for (let i = activeDeepBlueJets.length - 1; i >= 0; i--) {
                 const jet = activeDeepBlueJets[i];
-                scene.remove(jet.points);
-                jet.geo.dispose();
-                jet.points.material.dispose();
+                scene.remove(jet.outerMesh);
+                scene.remove(jet.coreMesh);
+                jet.outerMesh.material.dispose();
+                jet.coreMesh.material.dispose();
             }
             activeDeepBlueJets.length = 0;
         }
@@ -2137,117 +2125,91 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
             releaseDeepBlueNoteBar(source, midi);
         }
 
+        function getDeepBlueEffectLoadLevel() {
+            const concurrentBars = activeDeepBlueBars.length;
+            if (concurrentBars >= 10) return 'heavy';
+            if (concurrentBars >= 7) return 'warning';
+            return 'normal';
+        }
+
         function spawnDeepBlueJet(point, midi, isBlackKey, isHeldPulse = false) {
             if (!usesDeepBlueNoteLanes()) return;
 
-            const count = isHeldPulse
-                ? (isBlackKey ? 10 : 8)
-                : (isBlackKey ? 12 : 10);
-            const geo = new THREE.BufferGeometry();
-            const pos = new Float32Array(count * 3);
-            const vel = new Float32Array(count * 3);
-            const drift = new Float32Array(count * 3);
-            const sizes = new Float32Array(count);
-            const alphas = new Float32Array(count);
-            const colors = new Float32Array(count * 3);
-            const ages = new Float32Array(count);
-            const phases = new Float32Array(count);
-            const swirl = new Float32Array(count);
+            const loadLevel = getDeepBlueEffectLoadLevel();
+            if (isHeldPulse && loadLevel === 'heavy') return;
 
-            for (let i = 0; i < count; i++) {
-                const spread = (Math.random() - 0.5) * (isHeldPulse
-                    ? (isBlackKey ? 0.016 : 0.022)
-                    : (isBlackKey ? 0.014 : 0.019));
-                const lift = isHeldPulse
-                    ? 0.004 + Math.random() * 0.006
-                    : 0.0045 + Math.random() * 0.0065;
-                const color = getEffectColor(midi).lerp(
-                    new THREE.Color(0xffffff),
-                    isHeldPulse
-                        ? 0.12 + Math.random() * 0.08
-                        : 0.18 + Math.random() * 0.1
-                );
-
-                pos[i * 3] = point.x + spread * 0.3;
-                pos[i * 3 + 1] = point.y - 0.008 + Math.random() * 0.012;
-                pos[i * 3 + 2] = DEEP_BLUE_BAR_PLANE_Z + 0.008 + (Math.random() - 0.5) * 0.006;
-
-                vel[i * 3] = spread * 0.16;
-                vel[i * 3 + 1] = lift;
-                vel[i * 3 + 2] = 0;
-
-                drift[i * 3] = (Math.random() - 0.5) * 0.0014;
-                drift[i * 3 + 1] = 0.00055 + Math.random() * 0.0008;
-                drift[i * 3 + 2] = (Math.random() - 0.5) * 0.00035;
-
-                sizes[i] = (isHeldPulse ? 0.9 : 0.72) * ((isBlackKey ? 14 : 13) + Math.random() * 6);
-                alphas[i] = isHeldPulse
-                    ? 0.054 + Math.random() * 0.036
-                    : 0.05 + Math.random() * 0.045;
-                colors[i * 3] = color.r;
-                colors[i * 3 + 1] = color.g;
-                colors[i * 3 + 2] = color.b;
-                ages[i] = Math.random() * 0.18;
-                phases[i] = Math.random() * Math.PI * 2;
-                swirl[i] = 0.00045 + Math.random() * 0.00065;
-            }
-
-            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-            geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
-            geo.setAttribute('aAlpha', new THREE.BufferAttribute(alphas, 1));
-            geo.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
-
-            const points = new THREE.Points(
-                geo,
-                new THREE.ShaderMaterial({
-                    uniforms: { uTex: { value: mistTex } },
-                    vertexShader: `
-                        attribute float aSize;
-                        attribute float aAlpha;
-                        attribute vec3 aColor;
-                        varying float vAlpha;
-                        varying vec3 vColor;
-
-                        void main() {
-                            vAlpha = aAlpha;
-                            vColor = aColor;
-                            vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
-                            gl_PointSize = aSize * (0.45 + aAlpha * 0.9) * (350.0 / -mvPos.z);
-                            gl_Position = projectionMatrix * mvPos;
-                        }
-                    `,
-                    fragmentShader: `
-                        uniform sampler2D uTex;
-                        varying float vAlpha;
-                        varying vec3 vColor;
-
-                        void main() {
-                            vec4 tex = texture2D(uTex, gl_PointCoord);
-                            gl_FragColor = vec4(vColor * tex.rgb, tex.a * vAlpha);
-                        }
-                    `,
-                    transparent: true,
-                    blending: THREE.AdditiveBlending,
-                    depthWrite: false
-                })
+            const color = getEffectColor(midi).lerp(
+                new THREE.Color(0xffffff),
+                isHeldPulse ? 0.26 : 0.32
             );
+            const widthBase = isBlackKey ? 0.52 : 0.66;
+            const heightBase = isHeldPulse ? 0.34 : 0.5;
+            const widthBoost = loadLevel === 'warning' ? 0.95 : loadLevel === 'heavy' ? 0.9 : 1;
+            const heightBoost = loadLevel === 'warning' ? 0.96 : loadLevel === 'heavy' ? 0.9 : 1;
+            const baseScaleX = widthBase * widthBoost * (isHeldPulse ? 0.96 : 1);
+            const baseScaleY = heightBase * heightBoost;
+            const baseOpacity = isHeldPulse
+                ? (isBlackKey ? 0.54 : 0.5)
+                : (isBlackKey ? 0.66 : 0.6);
+            const outerMaterial = new THREE.MeshBasicMaterial({
+                map: haloTexture,
+                color,
+                transparent: true,
+                opacity: baseOpacity * 0.68,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+                toneMapped: false
+            });
+            const coreMaterial = new THREE.MeshBasicMaterial({
+                map: haloTexture,
+                color: color.clone().lerp(new THREE.Color(0xffffff), 0.22),
+                transparent: true,
+                opacity: baseOpacity,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+                toneMapped: false
+            });
+            const outerMesh = new THREE.Mesh(deepBlueJetGeometry, outerMaterial);
+            const coreMesh = new THREE.Mesh(deepBlueJetCoreGeometry, coreMaterial);
+            const baseY = point.y + (isHeldPulse ? 0.08 : 0.108);
 
-            points.renderOrder = isBlackKey ? 11 : 8;
-            scene.add(points);
+            outerMesh.position.set(
+                point.x,
+                baseY,
+                DEEP_BLUE_BAR_PLANE_Z + 0.01
+            );
+            coreMesh.position.set(
+                point.x,
+                baseY - (isHeldPulse ? 0.004 : 0.006),
+                DEEP_BLUE_BAR_PLANE_Z + 0.012
+            );
+            outerMesh.scale.set(baseScaleX * 1.58, baseScaleY * 1.58, 1);
+            coreMesh.scale.set(baseScaleX * 0.98, baseScaleY * 0.98, 1);
+            outerMesh.renderOrder = isBlackKey ? 10 : 7;
+            coreMesh.renderOrder = isBlackKey ? 11 : 8;
+            scene.add(outerMesh);
+            scene.add(coreMesh);
 
             activeDeepBlueJets.push({
-                points,
-                geo,
-                pos,
-                vel,
-                drift,
-                alphas,
-                ages,
-                phases,
-                swirl,
-                isHeldPulse,
-                posAttr: geo.attributes.position,
-                alphaAttr: geo.attributes.aAlpha
+                outerMesh,
+                coreMesh,
+                fade: 1,
+                decay: isHeldPulse ? 1.75 : 2.15,
+                baseOpacity,
+                outerBaseOpacity: baseOpacity * 0.78,
+                outerBaseScaleX: baseScaleX * 1.58,
+                outerBaseScaleY: baseScaleY * 1.58,
+                coreBaseScaleX: baseScaleX * 0.98,
+                coreBaseScaleY: baseScaleY * 0.98,
+                growthX: isHeldPulse ? 0.18 : 0.26,
+                growthY: isHeldPulse ? 0.18 : 0.26,
+                flickerPhase: Math.random() * Math.PI * 2,
+                flickerSpeed: isHeldPulse ? 7.2 : 9.4,
+                breathePhase: Math.random() * Math.PI * 2,
+                breatheSpeed: isHeldPulse ? 5.8 : 0,
+                isHeldPulse
             });
         }
 
@@ -2524,12 +2486,6 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
         // 10. 鍵盤互動
         // =========================================================
         window.addEventListener('keydown', async (e) => {
-            if (currentScreen === 'rhythm-game') {
-                if (rhythmGame && rhythmGame.handleKeyDown(e)) {
-                    return;
-                }
-            }
-
             if (!isInteractivePlayback()) {
                 if (currentScreen === 'home' && e.key === 'Enter') {
                     transitionFromHome(freePlayCard, 'free-play');
@@ -2566,12 +2522,6 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
         });
 
         window.addEventListener('keyup', (e) => {
-            if (currentScreen === 'rhythm-game') {
-                if (rhythmGame && rhythmGame.handleKeyUp(e)) {
-                    return;
-                }
-            }
-
             if (!isInteractivePlayback()) return;
 
             const key = e.key.toLowerCase();
@@ -2640,123 +2590,127 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
         // =========================================================
         // 11. 動畫循環
         // =========================================================
+        let lastAnimationTimeMs = performance.now();
+
         function animate() {
             requestAnimationFrame(animate);
 
-            const now = performance.now() * 0.001;
+            const nowMs = performance.now();
+            const now = nowMs * 0.001;
+            const deltaSeconds = Math.min((nowMs - lastAnimationTimeMs) * 0.001, 0.05);
+            lastAnimationTimeMs = nowMs;
             bgUniforms.uTime.value = now;
 
-            for (let i = activeSparks.length - 1; i >= 0; i--) {
-                const s = activeSparks[i];
-                let alive = 0;
+            if (activeSparks.length > 0) {
+                for (let i = activeSparks.length - 1; i >= 0; i--) {
+                    const s = activeSparks[i];
+                    let alive = 0;
 
-                for (let j = 0; j < s.alphas.length; j++) {
-                    if (s.alphas[j] > 0.01) {
-                        s.pos[j * 3] += s.vel[j * 3];
-                        s.pos[j * 3 + 1] += s.vel[j * 3 + 1];
-                        s.pos[j * 3 + 2] += s.vel[j * 3 + 2];
+                    for (let j = 0; j < s.alphas.length; j++) {
+                        if (s.alphas[j] > 0.01) {
+                            s.pos[j * 3] += s.vel[j * 3];
+                            s.pos[j * 3 + 1] += s.vel[j * 3 + 1];
+                            s.pos[j * 3 + 2] += s.vel[j * 3 + 2];
 
-                        s.vel[j * 3] *= 0.98;
-                        s.vel[j * 3 + 1] *= 0.98;
-                        s.vel[j * 3 + 2] *= 0.985;
+                            s.vel[j * 3] *= 0.98;
+                            s.vel[j * 3 + 1] *= 0.98;
+                            s.vel[j * 3 + 2] *= 0.985;
 
-                        s.rx[j] += s.rvx[j];
-                        s.ry[j] += s.rvy[j];
-                        s.rz[j] += s.rvz[j];
+                            s.rx[j] += s.rvx[j];
+                            s.ry[j] += s.rvy[j];
+                            s.rz[j] += s.rvz[j];
 
-                        s.rvx[j] *= 0.992;
-                        s.rvy[j] *= 0.992;
-                        s.rvz[j] *= 0.992;
+                            s.rvx[j] *= 0.992;
+                            s.rvy[j] *= 0.992;
+                            s.rvz[j] *= 0.992;
 
-                        s.alphas[j] *= 0.975;
-                        alive++;
+                            s.alphas[j] *= 0.975;
+                            alive++;
+                        }
                     }
-                }
 
-                s.posAttr.needsUpdate = true;
-                s.alphaAttr.needsUpdate = true;
-                s.rotXAttr.needsUpdate = true;
-                s.rotYAttr.needsUpdate = true;
-                s.rotZAttr.needsUpdate = true;
+                    s.posAttr.needsUpdate = true;
+                    s.alphaAttr.needsUpdate = true;
+                    s.rotXAttr.needsUpdate = true;
+                    s.rotYAttr.needsUpdate = true;
+                    s.rotZAttr.needsUpdate = true;
 
-                if (alive === 0) {
-                    scene.remove(s.points);
-                    s.geo.dispose();
-                    s.points.material.dispose();
-                    activeSparks.splice(i, 1);
+                    if (alive === 0) {
+                        scene.remove(s.points);
+                        s.geo.dispose();
+                        s.points.material.dispose();
+                        activeSparks.splice(i, 1);
+                    }
                 }
             }
 
-            for (let i = activeMists.length - 1; i >= 0; i--) {
-                const m = activeMists[i];
-                let alive = 0;
+            if (activeMists.length > 0) {
+                for (let i = activeMists.length - 1; i >= 0; i--) {
+                    const m = activeMists[i];
+                    let alive = 0;
 
-                for (let j = 0; j < m.alphas.length; j++) {
-                    if (m.alphas[j] > 0.008) {
-                        m.pos[j * 3] += m.drift[j * 3];
-                        m.pos[j * 3 + 1] += m.drift[j * 3 + 1];
-                        m.drift[j * 3] *= 0.992;
-                        m.drift[j * 3 + 1] *= 0.996;
-                        m.alphas[j] *= 0.975;
-                        alive++;
+                    for (let j = 0; j < m.alphas.length; j++) {
+                        if (m.alphas[j] > 0.008) {
+                            m.pos[j * 3] += m.drift[j * 3];
+                            m.pos[j * 3 + 1] += m.drift[j * 3 + 1];
+                            m.drift[j * 3] *= 0.992;
+                            m.drift[j * 3 + 1] *= 0.996;
+                            m.alphas[j] *= 0.975;
+                            alive++;
+                        }
                     }
-                }
 
-                m.posAttr.needsUpdate = true;
-                m.alphaAttr.needsUpdate = true;
+                    m.posAttr.needsUpdate = true;
+                    m.alphaAttr.needsUpdate = true;
 
-                if (alive === 0) {
-                    scene.remove(m.points);
-                    m.geo.dispose();
-                    m.points.material.dispose();
-                    activeMists.splice(i, 1);
+                    if (alive === 0) {
+                        scene.remove(m.points);
+                        m.geo.dispose();
+                        m.points.material.dispose();
+                        activeMists.splice(i, 1);
+                    }
                 }
             }
 
-            for (let i = activeDeepBlueJets.length - 1; i >= 0; i--) {
-                const jet = activeDeepBlueJets[i];
-                let alive = 0;
-
-                for (let j = 0; j < jet.alphas.length; j++) {
-                    if (jet.alphas[j] > 0.006) {
-                        jet.ages[j] += 0.06;
-
-                        const swirlX = Math.sin(jet.ages[j] * 3.2 + jet.phases[j]) * jet.swirl[j];
-                        const swirlZ = Math.cos(jet.ages[j] * 2.4 + jet.phases[j] * 0.7) * jet.swirl[j] * 0.35;
-                        const pulse = jet.isHeldPulse
-                            ? 0.992 + Math.sin(jet.ages[j] * 1.15 + jet.phases[j]) * 0.012
-                            : 1;
-
-                        jet.vel[j * 3] += jet.drift[j * 3] + swirlX;
-                        jet.vel[j * 3 + 1] += jet.drift[j * 3 + 1];
-                        jet.vel[j * 3 + 2] += jet.drift[j * 3 + 2] + swirlZ;
-
-                        jet.pos[j * 3] += jet.vel[j * 3];
-                        jet.pos[j * 3 + 1] += jet.vel[j * 3 + 1];
-                        jet.pos[j * 3 + 2] += jet.vel[j * 3 + 2];
-
-                        jet.vel[j * 3] *= 0.84;
-                        jet.vel[j * 3 + 1] *= 0.94;
-                        jet.vel[j * 3 + 2] *= 0.84;
-                        jet.alphas[j] *= (jet.isHeldPulse ? 0.968 : 0.958) * pulse;
-                        alive++;
+            if (activeDeepBlueJets.length > 0) {
+                for (let i = activeDeepBlueJets.length - 1; i >= 0; i--) {
+                    const jet = activeDeepBlueJets[i];
+                    jet.fade = Math.max(0, jet.fade - jet.decay * deltaSeconds);
+                    jet.flickerPhase += jet.flickerSpeed * deltaSeconds;
+                    if (jet.isHeldPulse) {
+                        jet.breathePhase += jet.breatheSpeed * deltaSeconds;
                     }
-                }
+                    const flicker = 0.95 + Math.sin(jet.flickerPhase) * 0.05;
+                    const breathe = jet.isHeldPulse
+                        ? 0.8 + (0.5 + 0.5 * Math.sin(jet.breathePhase)) * 0.4
+                        : 1;
+                    const envelope = Math.sin(Math.min(1, 1 - jet.fade) * Math.PI);
+                    jet.outerMesh.material.opacity = jet.outerBaseOpacity * (0.28 + envelope * 0.72) * jet.fade * (0.96 + flicker * 0.04) * breathe;
+                    jet.coreMesh.material.opacity = jet.baseOpacity * (0.42 + envelope * 0.58) * jet.fade * flicker * breathe;
 
-                jet.posAttr.needsUpdate = true;
-                jet.alphaAttr.needsUpdate = true;
+                    const growth = 1 - jet.fade;
+                    const breatheScale = jet.isHeldPulse
+                        ? 1 + (0.5 + 0.5 * Math.sin(jet.breathePhase)) * 0.1
+                        : 1;
+                    jet.outerMesh.scale.x = jet.outerBaseScaleX * (1 + growth * jet.growthX * 0.7) * breatheScale;
+                    jet.outerMesh.scale.y = jet.outerBaseScaleY * (1 + growth * jet.growthY) * breatheScale;
+                    jet.coreMesh.scale.x = jet.coreBaseScaleX * (1 + growth * jet.growthX * 0.35) * breatheScale;
+                    jet.coreMesh.scale.y = jet.coreBaseScaleY * (1 + growth * jet.growthY * 0.42) * breatheScale;
 
-                if (alive === 0) {
-                    scene.remove(jet.points);
-                    jet.geo.dispose();
-                    jet.points.material.dispose();
-                    activeDeepBlueJets.splice(i, 1);
+                    if (jet.fade <= 0.03) {
+                        scene.remove(jet.outerMesh);
+                        scene.remove(jet.coreMesh);
+                        jet.outerMesh.material.dispose();
+                        jet.coreMesh.material.dispose();
+                        activeDeepBlueJets.splice(i, 1);
+                    }
                 }
             }
 
-            updateDeepBlueBars();
+            updateDeepBlueBars(deltaSeconds, nowMs * 0.01);
 
             renderer.render(scene, camera);
+            perfMonitor.sampleFrame(nowMs);
         }
 
         animate();
@@ -2765,6 +2719,7 @@ import { createRhythmGameModule } from './modes/rhythm-game/index.js';
             schedulePianoLayoutSync();
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
+            renderer.setPixelRatio(window.devicePixelRatio || 1);
             renderer.setSize(window.innerWidth, window.innerHeight);
             updateBgPoints();
             updateDeepBlueMask();
