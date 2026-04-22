@@ -849,14 +849,13 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             playbackPianoNotes.delete(midi);
         }
 
-        function playVisualFeedback(source, midi, ringX, ringY, options = {}) {
-            const { holdHighlight = false } = options;
+        function playVisualFeedback(source, midi, ringX, ringY) {
             const ringPoint = new THREE.Vector3(ringX, ringY, RING_PLANE_Z);
             const mistPoint = projectPointToPlane(ringPoint, MIST_PLANE_Z);
             const bgPoint = projectPointToPlane(ringPoint, BG_PLANE_Z);
             const sparkPoint = projectPointToPlane(ringPoint, SPARK_PLANE_Z);
 
-            triggerInteraction(source, bgPoint, midi, { holdHighlight });
+            triggerInteraction(source, bgPoint, midi);
             spawnMist(mistPoint, midi);
             spawnSparks(sparkPoint);
         }
@@ -882,9 +881,7 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
                     if (!isPlaybackActive) return;
 
                     if (event.type === 'note-on') {
-                        playVisualFeedback('playback', event.midi, event.ringX, event.ringY, {
-                            holdHighlight: !!event.sustained
-                        });
+                        playVisualFeedback('playback', event.midi, event.ringX, event.ringY);
                         triggerDeepBlueNoteOn('playback', event.midi, !!event.sustained);
 
                         if (supportsHeldNotes(recordedSoundType) && event.sustained) {
@@ -1869,8 +1866,8 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             return group;
         }
 
-        function updateDeepBlueBarGlow(bar, baseOpacity, shimmerTime) {
-            const shimmer = 0.94 + Math.sin(shimmerTime + bar.midi * 0.35) * 0.08;
+        function updateDeepBlueBarGlow(bar, baseOpacity) {
+            const shimmer = 0.94 + Math.sin(performance.now() * 0.01 + bar.midi * 0.35) * 0.08;
             const visuals = bar.mesh.userData;
             if (!visuals) return;
 
@@ -1890,23 +1887,6 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             });
         }
 
-        function removeDeepBlueBar(bar) {
-            if (!bar) return;
-
-            liveDeepBlueBars.delete(bar.key);
-
-            const activeIndex = activeDeepBlueBars.indexOf(bar);
-            if (activeIndex >= 0) {
-                activeDeepBlueBars.splice(activeIndex, 1);
-            }
-
-            if (deepBlueBarGroup) {
-                deepBlueBarGroup.remove(bar.mesh);
-            }
-
-            disposeDeepBlueBarMesh(bar.mesh);
-        }
-
         function getDeepBlueBarKey(source, midi) {
             return `${source}:${midi}`;
         }
@@ -1917,9 +1897,7 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             ensureDeepBlueBarGroup();
 
             const barKey = getDeepBlueBarKey(source, midi);
-            if (isSustained && liveDeepBlueBars.has(barKey)) {
-                removeDeepBlueBar(liveDeepBlueBars.get(barKey));
-            }
+            if (isSustained && liveDeepBlueBars.has(barKey)) return;
 
             const launchPoint = getMidiLaunchPosition(midi, DEEP_BLUE_BAR_PLANE_Z);
             const blackKey = isBlackKeyMidi(midi);
@@ -1952,8 +1930,7 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
                 releaseGrowthSpeed: 0.045,
                 drift: 0,
                 glowBaseOpacity: 0.88,
-                holdGlowPhase: Math.random() * Math.PI * 2,
-                jetPulseTimer: 0.16 + Math.random() * 0.1
+                jetPulseTimer: 0.22 + Math.random() * 0.12
             };
 
             activeDeepBlueBars.push(bar);
@@ -1977,12 +1954,9 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             liveDeepBlueBars.delete(barKey);
         }
 
-        function updateDeepBlueBars(deltaSeconds, shimmerTime) {
-            if (activeDeepBlueBars.length === 0) return;
-
+        function updateDeepBlueBars() {
             const { height } = getPlaneViewSize(DEEP_BLUE_BAR_PLANE_Z);
             const upperBound = height * 0.5 + 6;
-            const frameScale = deltaSeconds * 60;
 
             for (let i = activeDeepBlueBars.length - 1; i >= 0; i--) {
                 const bar = activeDeepBlueBars[i];
@@ -1992,25 +1966,19 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
 
                 let targetGlowBaseOpacity = 0.88 * bar.fade;
                 if (bar.holding) {
-                    bar.topY = Math.min(upperBound, bar.topY + bar.velocity * frameScale);
+                    bar.topY += bar.velocity;
                     bar.currentHeight = Math.max(bar.baseHeight, bar.topY - bar.entryY);
                     bar.mesh.scale.y = bar.currentHeight / bar.baseHeight;
                     bar.mesh.position.y = bar.entryY + bar.currentHeight * 0.5;
-                    bar.holdGlowPhase += deltaSeconds * 8.2;
-                    const holdPulse = 0.5 + 0.5 * Math.sin(bar.holdGlowPhase);
-                    targetGlowBaseOpacity = 0.86 + holdPulse * 0.18;
-                    bar.jetPulseTimer -= deltaSeconds;
+                    targetGlowBaseOpacity = 0.88;
+
+                    bar.jetPulseTimer -= 1 / 60;
                     if (bar.jetPulseTimer <= 0) {
                         spawnDeepBlueJet({ x: bar.mesh.position.x, y: bar.entryY }, bar.midi, isBlackKeyMidi(bar.midi), true);
-                        const loadLevel = getDeepBlueEffectLoadLevel();
-                        bar.jetPulseTimer = loadLevel === 'heavy'
-                            ? 0.46 + Math.random() * 0.08
-                            : loadLevel === 'warning'
-                            ? 0.3 + Math.random() * 0.08
-                            : 0.2 + Math.random() * 0.08;
+                        bar.jetPulseTimer = 0.3 + Math.random() * 0.18;
                     }
                 } else if (bar.sprouting) {
-                    bar.currentHeight = Math.min(bar.targetHeight, bar.currentHeight + bar.releaseGrowthSpeed * frameScale);
+                    bar.currentHeight = Math.min(bar.targetHeight, bar.currentHeight + bar.releaseGrowthSpeed);
                     bar.mesh.scale.y = bar.currentHeight / bar.baseHeight;
                     bar.mesh.position.y = bar.launchY + bar.currentHeight * 0.5;
                     targetGlowBaseOpacity = 0.88;
@@ -2019,16 +1987,15 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
                         bar.sprouting = false;
                     }
                 } else {
-                    bar.mesh.position.y += bar.velocity * frameScale;
-                    bar.mesh.position.x += bar.drift * frameScale;
-                    bar.launchY += bar.velocity * frameScale;
+                    bar.mesh.position.y += bar.velocity;
+                    bar.mesh.position.x += bar.drift;
+                    bar.launchY += bar.velocity;
                 }
 
                 bar.glowBaseOpacity += (targetGlowBaseOpacity - bar.glowBaseOpacity) * 0.1;
-                updateDeepBlueBarGlow(bar, bar.glowBaseOpacity, shimmerTime);
+                updateDeepBlueBarGlow(bar, bar.glowBaseOpacity);
 
-                if (!bar.holding && bar.mesh.position.y > upperBound) {
-                    liveDeepBlueBars.delete(bar.key);
+                if (bar.mesh.position.y > upperBound) {
                     if (deepBlueBarGroup) {
                         deepBlueBarGroup.remove(bar.mesh);
                     }
@@ -2098,10 +2065,9 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
         function clearActiveDeepBlueJets() {
             for (let i = activeDeepBlueJets.length - 1; i >= 0; i--) {
                 const jet = activeDeepBlueJets[i];
-                scene.remove(jet.outerMesh);
-                scene.remove(jet.coreMesh);
-                jet.outerMesh.material.dispose();
-                jet.coreMesh.material.dispose();
+                scene.remove(jet.points);
+                jet.geo.dispose();
+                jet.points.material.dispose();
             }
             activeDeepBlueJets.length = 0;
         }
@@ -2132,8 +2098,7 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
 
         syncBackgroundVisualState();
 
-        function triggerInteraction(source, bgPoint, midi, options = {}) {
-            const { holdHighlight = false } = options;
+        function triggerInteraction(source, bgPoint, midi) {
             if (usesLegacyGridEffects()) {
                 bgUniforms.uImpacts.value[impactIdx].set(bgPoint.x, bgPoint.y, 0);
                 bgUniforms.uImpactTimes.value[impactIdx] = performance.now() * 0.001;
@@ -2141,9 +2106,7 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             }
 
             highlightKey(source, midi, true);
-            if (!holdHighlight) {
-                setTimeout(() => highlightKey(source, midi, false), 150);
-            }
+            setTimeout(() => highlightKey(source, midi, false), 150);
         }
 
         function triggerDeepBlueNoteOn(source, midi, isSustained = false) {
@@ -2154,91 +2117,117 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             releaseDeepBlueNoteBar(source, midi);
         }
 
-        function getDeepBlueEffectLoadLevel() {
-            const concurrentBars = activeDeepBlueBars.length;
-            if (concurrentBars >= 10) return 'heavy';
-            if (concurrentBars >= 7) return 'warning';
-            return 'normal';
-        }
-
         function spawnDeepBlueJet(point, midi, isBlackKey, isHeldPulse = false) {
             if (!usesDeepBlueNoteLanes()) return;
 
-            const loadLevel = getDeepBlueEffectLoadLevel();
-            if (isHeldPulse && loadLevel === 'heavy') return;
+            const count = isHeldPulse
+                ? (isBlackKey ? 10 : 8)
+                : (isBlackKey ? 12 : 10);
+            const geo = new THREE.BufferGeometry();
+            const pos = new Float32Array(count * 3);
+            const vel = new Float32Array(count * 3);
+            const drift = new Float32Array(count * 3);
+            const sizes = new Float32Array(count);
+            const alphas = new Float32Array(count);
+            const colors = new Float32Array(count * 3);
+            const ages = new Float32Array(count);
+            const phases = new Float32Array(count);
+            const swirl = new Float32Array(count);
 
-            const color = getEffectColor(midi).lerp(
-                new THREE.Color(0xffffff),
-                isHeldPulse ? 0.26 : 0.32
-            );
-            const widthBase = isBlackKey ? 0.52 : 0.66;
-            const heightBase = isHeldPulse ? 0.34 : 0.5;
-            const widthBoost = loadLevel === 'warning' ? 0.95 : loadLevel === 'heavy' ? 0.9 : 1;
-            const heightBoost = loadLevel === 'warning' ? 0.96 : loadLevel === 'heavy' ? 0.9 : 1;
-            const baseScaleX = widthBase * widthBoost * (isHeldPulse ? 0.96 : 1);
-            const baseScaleY = heightBase * heightBoost;
-            const baseOpacity = isHeldPulse
-                ? (isBlackKey ? 0.54 : 0.5)
-                : (isBlackKey ? 0.66 : 0.6);
-            const outerMaterial = new THREE.MeshBasicMaterial({
-                map: haloTexture,
-                color,
-                transparent: true,
-                opacity: baseOpacity * 0.68,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false,
-                side: THREE.DoubleSide,
-                toneMapped: false
-            });
-            const coreMaterial = new THREE.MeshBasicMaterial({
-                map: haloTexture,
-                color: color.clone().lerp(new THREE.Color(0xffffff), 0.22),
-                transparent: true,
-                opacity: baseOpacity,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false,
-                side: THREE.DoubleSide,
-                toneMapped: false
-            });
-            const outerMesh = new THREE.Mesh(deepBlueJetGeometry, outerMaterial);
-            const coreMesh = new THREE.Mesh(deepBlueJetCoreGeometry, coreMaterial);
-            const baseY = point.y + (isHeldPulse ? 0.08 : 0.108);
+            for (let i = 0; i < count; i++) {
+                const spread = (Math.random() - 0.5) * (isHeldPulse
+                    ? (isBlackKey ? 0.016 : 0.022)
+                    : (isBlackKey ? 0.014 : 0.019));
+                const lift = isHeldPulse
+                    ? 0.004 + Math.random() * 0.006
+                    : 0.0045 + Math.random() * 0.0065;
+                const color = getEffectColor(midi).lerp(
+                    new THREE.Color(0xffffff),
+                    isHeldPulse
+                        ? 0.12 + Math.random() * 0.08
+                        : 0.18 + Math.random() * 0.1
+                );
 
-            outerMesh.position.set(
-                point.x,
-                baseY,
-                DEEP_BLUE_BAR_PLANE_Z + 0.01
+                pos[i * 3] = point.x + spread * 0.3;
+                pos[i * 3 + 1] = point.y - 0.008 + Math.random() * 0.012;
+                pos[i * 3 + 2] = DEEP_BLUE_BAR_PLANE_Z + 0.008 + (Math.random() - 0.5) * 0.006;
+
+                vel[i * 3] = spread * 0.16;
+                vel[i * 3 + 1] = lift;
+                vel[i * 3 + 2] = 0;
+
+                drift[i * 3] = (Math.random() - 0.5) * 0.0014;
+                drift[i * 3 + 1] = 0.00055 + Math.random() * 0.0008;
+                drift[i * 3 + 2] = (Math.random() - 0.5) * 0.00035;
+
+                sizes[i] = (isHeldPulse ? 0.9 : 0.72) * ((isBlackKey ? 14 : 13) + Math.random() * 6);
+                alphas[i] = isHeldPulse
+                    ? 0.054 + Math.random() * 0.036
+                    : 0.05 + Math.random() * 0.045;
+                colors[i * 3] = color.r;
+                colors[i * 3 + 1] = color.g;
+                colors[i * 3 + 2] = color.b;
+                ages[i] = Math.random() * 0.18;
+                phases[i] = Math.random() * Math.PI * 2;
+                swirl[i] = 0.00045 + Math.random() * 0.00065;
+            }
+
+            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+            geo.setAttribute('aAlpha', new THREE.BufferAttribute(alphas, 1));
+            geo.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+
+            const points = new THREE.Points(
+                geo,
+                new THREE.ShaderMaterial({
+                    uniforms: { uTex: { value: mistTex } },
+                    vertexShader: `
+                        attribute float aSize;
+                        attribute float aAlpha;
+                        attribute vec3 aColor;
+                        varying float vAlpha;
+                        varying vec3 vColor;
+
+                        void main() {
+                            vAlpha = aAlpha;
+                            vColor = aColor;
+                            vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+                            gl_PointSize = aSize * (0.45 + aAlpha * 0.9) * (350.0 / -mvPos.z);
+                            gl_Position = projectionMatrix * mvPos;
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform sampler2D uTex;
+                        varying float vAlpha;
+                        varying vec3 vColor;
+
+                        void main() {
+                            vec4 tex = texture2D(uTex, gl_PointCoord);
+                            gl_FragColor = vec4(vColor * tex.rgb, tex.a * vAlpha);
+                        }
+                    `,
+                    transparent: true,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false
+                })
             );
-            coreMesh.position.set(
-                point.x,
-                baseY - (isHeldPulse ? 0.004 : 0.006),
-                DEEP_BLUE_BAR_PLANE_Z + 0.012
-            );
-            outerMesh.scale.set(baseScaleX * 1.58, baseScaleY * 1.58, 1);
-            coreMesh.scale.set(baseScaleX * 0.98, baseScaleY * 0.98, 1);
-            outerMesh.renderOrder = isBlackKey ? 10 : 7;
-            coreMesh.renderOrder = isBlackKey ? 11 : 8;
-            scene.add(outerMesh);
-            scene.add(coreMesh);
+
+            points.renderOrder = isBlackKey ? 11 : 8;
+            scene.add(points);
 
             activeDeepBlueJets.push({
-                outerMesh,
-                coreMesh,
-                fade: 1,
-                decay: isHeldPulse ? 1.75 : 2.15,
-                baseOpacity,
-                outerBaseOpacity: baseOpacity * 0.78,
-                outerBaseScaleX: baseScaleX * 1.58,
-                outerBaseScaleY: baseScaleY * 1.58,
-                coreBaseScaleX: baseScaleX * 0.98,
-                coreBaseScaleY: baseScaleY * 0.98,
-                growthX: isHeldPulse ? 0.18 : 0.26,
-                growthY: isHeldPulse ? 0.18 : 0.26,
-                flickerPhase: Math.random() * Math.PI * 2,
-                flickerSpeed: isHeldPulse ? 7.2 : 9.4,
-                breathePhase: Math.random() * Math.PI * 2,
-                breatheSpeed: isHeldPulse ? 5.8 : 0,
-                isHeldPulse
+                points,
+                geo,
+                pos,
+                vel,
+                drift,
+                alphas,
+                ages,
+                phases,
+                swirl,
+                isHeldPulse,
+                posAttr: geo.attributes.position,
+                alphaAttr: geo.attributes.aAlpha
             });
         }
 
@@ -2534,7 +2523,7 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
                     if (isInstrumentLoading) return;
                     const { x, y } = getKeyVisualPosition(key);
                     const sustained = true;
-                    playVisualFeedback('user', midi, x, y, { holdHighlight: true });
+                    playVisualFeedback('user', midi, x, y);
                     triggerDeepBlueNoteOn('user', midi, sustained);
                     recordPerformanceEvent({ type: 'note-on', midi, ringX: x, ringY: y, sustained });
                     activeVisualKeyStates.set(key, { midi });
@@ -2705,39 +2694,47 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             if (activeDeepBlueJets.length > 0) {
                 for (let i = activeDeepBlueJets.length - 1; i >= 0; i--) {
                     const jet = activeDeepBlueJets[i];
-                    jet.fade = Math.max(0, jet.fade - jet.decay * deltaSeconds);
-                    jet.flickerPhase += jet.flickerSpeed * deltaSeconds;
-                    if (jet.isHeldPulse) {
-                        jet.breathePhase += jet.breatheSpeed * deltaSeconds;
+                    let alive = 0;
+
+                    for (let j = 0; j < jet.alphas.length; j++) {
+                        if (jet.alphas[j] > 0.006) {
+                            jet.ages[j] += 0.06;
+
+                            const swirlX = Math.sin(jet.ages[j] * 3.2 + jet.phases[j]) * jet.swirl[j];
+                            const swirlZ = Math.cos(jet.ages[j] * 2.4 + jet.phases[j] * 0.7) * jet.swirl[j] * 0.35;
+                            const pulse = jet.isHeldPulse
+                                ? 0.992 + Math.sin(jet.ages[j] * 1.15 + jet.phases[j]) * 0.012
+                                : 1;
+
+                            jet.vel[j * 3] += jet.drift[j * 3] + swirlX;
+                            jet.vel[j * 3 + 1] += jet.drift[j * 3 + 1];
+                            jet.vel[j * 3 + 2] += jet.drift[j * 3 + 2] + swirlZ;
+
+                            jet.pos[j * 3] += jet.vel[j * 3];
+                            jet.pos[j * 3 + 1] += jet.vel[j * 3 + 1];
+                            jet.pos[j * 3 + 2] += jet.vel[j * 3 + 2];
+
+                            jet.vel[j * 3] *= 0.84;
+                            jet.vel[j * 3 + 1] *= 0.94;
+                            jet.vel[j * 3 + 2] *= 0.84;
+                            jet.alphas[j] *= (jet.isHeldPulse ? 0.968 : 0.958) * pulse;
+                            alive++;
+                        }
                     }
-                    const flicker = 0.95 + Math.sin(jet.flickerPhase) * 0.05;
-                    const breathe = jet.isHeldPulse
-                        ? 0.8 + (0.5 + 0.5 * Math.sin(jet.breathePhase)) * 0.4
-                        : 1;
-                    const envelope = Math.sin(Math.min(1, 1 - jet.fade) * Math.PI);
-                    jet.outerMesh.material.opacity = jet.outerBaseOpacity * (0.28 + envelope * 0.72) * jet.fade * (0.96 + flicker * 0.04) * breathe;
-                    jet.coreMesh.material.opacity = jet.baseOpacity * (0.42 + envelope * 0.58) * jet.fade * flicker * breathe;
 
-                    const growth = 1 - jet.fade;
-                    const breatheScale = jet.isHeldPulse
-                        ? 1 + (0.5 + 0.5 * Math.sin(jet.breathePhase)) * 0.1
-                        : 1;
-                    jet.outerMesh.scale.x = jet.outerBaseScaleX * (1 + growth * jet.growthX * 0.7) * breatheScale;
-                    jet.outerMesh.scale.y = jet.outerBaseScaleY * (1 + growth * jet.growthY) * breatheScale;
-                    jet.coreMesh.scale.x = jet.coreBaseScaleX * (1 + growth * jet.growthX * 0.35) * breatheScale;
-                    jet.coreMesh.scale.y = jet.coreBaseScaleY * (1 + growth * jet.growthY * 0.42) * breatheScale;
+                    jet.posAttr.needsUpdate = true;
+                    jet.alphaAttr.needsUpdate = true;
 
-                    if (jet.fade <= 0.03) {
-                        scene.remove(jet.outerMesh);
-                        scene.remove(jet.coreMesh);
-                        jet.outerMesh.material.dispose();
-                        jet.coreMesh.material.dispose();
+                    if (alive === 0) {
+                        scene.remove(jet.points);
+                        jet.geo.dispose();
+                        jet.points.material.dispose();
                         activeDeepBlueJets.splice(i, 1);
                     }
                 }
             }
 
-            updateDeepBlueBars(deltaSeconds, nowMs * 0.01);
+            updateDeepBlueBars();
 
             renderer.render(scene, camera);
             perfMonitor.sampleFrame(nowMs);
