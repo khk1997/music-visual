@@ -217,6 +217,7 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
 
             for (const [key, visualState] of Array.from(activeVisualKeyStates.entries())) {
                 recordPerformanceEvent({ type: 'note-off', midi: visualState.midi });
+                highlightKey('user', visualState.midi, false);
                 triggerDeepBlueNoteOff('user', visualState.midi);
                 activeVisualKeyStates.delete(key);
             }
@@ -848,13 +849,14 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             playbackPianoNotes.delete(midi);
         }
 
-        function playVisualFeedback(source, midi, ringX, ringY) {
+        function playVisualFeedback(source, midi, ringX, ringY, options = {}) {
+            const { holdHighlight = false } = options;
             const ringPoint = new THREE.Vector3(ringX, ringY, RING_PLANE_Z);
             const mistPoint = projectPointToPlane(ringPoint, MIST_PLANE_Z);
             const bgPoint = projectPointToPlane(ringPoint, BG_PLANE_Z);
             const sparkPoint = projectPointToPlane(ringPoint, SPARK_PLANE_Z);
 
-            triggerInteraction(source, bgPoint, midi);
+            triggerInteraction(source, bgPoint, midi, { holdHighlight });
             spawnMist(mistPoint, midi);
             spawnSparks(sparkPoint);
         }
@@ -880,7 +882,9 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
                     if (!isPlaybackActive) return;
 
                     if (event.type === 'note-on') {
-                        playVisualFeedback('playback', event.midi, event.ringX, event.ringY);
+                        playVisualFeedback('playback', event.midi, event.ringX, event.ringY, {
+                            holdHighlight: !!event.sustained
+                        });
                         triggerDeepBlueNoteOn('playback', event.midi, !!event.sustained);
 
                         if (supportsHeldNotes(recordedSoundType) && event.sustained) {
@@ -889,6 +893,7 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
                             playMidiWithInstrument(playbackInstrument, recordedSoundType, event.midi);
                         }
                     } else if (event.type === 'note-off') {
+                        highlightKey('playback', event.midi, false);
                         triggerDeepBlueNoteOff('playback', event.midi);
                         if (supportsHeldNotes(recordedSoundType)) {
                             releasePlaybackPianoMidi(event.midi);
@@ -1885,6 +1890,23 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             });
         }
 
+        function removeDeepBlueBar(bar) {
+            if (!bar) return;
+
+            liveDeepBlueBars.delete(bar.key);
+
+            const activeIndex = activeDeepBlueBars.indexOf(bar);
+            if (activeIndex >= 0) {
+                activeDeepBlueBars.splice(activeIndex, 1);
+            }
+
+            if (deepBlueBarGroup) {
+                deepBlueBarGroup.remove(bar.mesh);
+            }
+
+            disposeDeepBlueBarMesh(bar.mesh);
+        }
+
         function getDeepBlueBarKey(source, midi) {
             return `${source}:${midi}`;
         }
@@ -1895,7 +1917,9 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             ensureDeepBlueBarGroup();
 
             const barKey = getDeepBlueBarKey(source, midi);
-            if (isSustained && liveDeepBlueBars.has(barKey)) return;
+            if (isSustained && liveDeepBlueBars.has(barKey)) {
+                removeDeepBlueBar(liveDeepBlueBars.get(barKey));
+            }
 
             const launchPoint = getMidiLaunchPosition(midi, DEEP_BLUE_BAR_PLANE_Z);
             const blackKey = isBlackKeyMidi(midi);
@@ -1958,6 +1982,7 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
 
             const { height } = getPlaneViewSize(DEEP_BLUE_BAR_PLANE_Z);
             const upperBound = height * 0.5 + 6;
+            const frameScale = deltaSeconds * 60;
 
             for (let i = activeDeepBlueBars.length - 1; i >= 0; i--) {
                 const bar = activeDeepBlueBars[i];
@@ -1967,7 +1992,7 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
 
                 let targetGlowBaseOpacity = 0.88 * bar.fade;
                 if (bar.holding) {
-                    bar.topY += bar.velocity;
+                    bar.topY = Math.min(upperBound, bar.topY + bar.velocity * frameScale);
                     bar.currentHeight = Math.max(bar.baseHeight, bar.topY - bar.entryY);
                     bar.mesh.scale.y = bar.currentHeight / bar.baseHeight;
                     bar.mesh.position.y = bar.entryY + bar.currentHeight * 0.5;
@@ -1985,7 +2010,7 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
                             : 0.2 + Math.random() * 0.08;
                     }
                 } else if (bar.sprouting) {
-                    bar.currentHeight = Math.min(bar.targetHeight, bar.currentHeight + bar.releaseGrowthSpeed);
+                    bar.currentHeight = Math.min(bar.targetHeight, bar.currentHeight + bar.releaseGrowthSpeed * frameScale);
                     bar.mesh.scale.y = bar.currentHeight / bar.baseHeight;
                     bar.mesh.position.y = bar.launchY + bar.currentHeight * 0.5;
                     targetGlowBaseOpacity = 0.88;
@@ -1994,15 +2019,16 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
                         bar.sprouting = false;
                     }
                 } else {
-                    bar.mesh.position.y += bar.velocity;
-                    bar.mesh.position.x += bar.drift;
-                    bar.launchY += bar.velocity;
+                    bar.mesh.position.y += bar.velocity * frameScale;
+                    bar.mesh.position.x += bar.drift * frameScale;
+                    bar.launchY += bar.velocity * frameScale;
                 }
 
                 bar.glowBaseOpacity += (targetGlowBaseOpacity - bar.glowBaseOpacity) * 0.1;
                 updateDeepBlueBarGlow(bar, bar.glowBaseOpacity, shimmerTime);
 
-                if (bar.mesh.position.y > upperBound) {
+                if (!bar.holding && bar.mesh.position.y > upperBound) {
+                    liveDeepBlueBars.delete(bar.key);
                     if (deepBlueBarGroup) {
                         deepBlueBarGroup.remove(bar.mesh);
                     }
@@ -2106,7 +2132,8 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
 
         syncBackgroundVisualState();
 
-        function triggerInteraction(source, bgPoint, midi) {
+        function triggerInteraction(source, bgPoint, midi, options = {}) {
+            const { holdHighlight = false } = options;
             if (usesLegacyGridEffects()) {
                 bgUniforms.uImpacts.value[impactIdx].set(bgPoint.x, bgPoint.y, 0);
                 bgUniforms.uImpactTimes.value[impactIdx] = performance.now() * 0.001;
@@ -2114,7 +2141,9 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             }
 
             highlightKey(source, midi, true);
-            setTimeout(() => highlightKey(source, midi, false), 150);
+            if (!holdHighlight) {
+                setTimeout(() => highlightKey(source, midi, false), 150);
+            }
         }
 
         function triggerDeepBlueNoteOn(source, midi, isSustained = false) {
@@ -2505,7 +2534,7 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
                     if (isInstrumentLoading) return;
                     const { x, y } = getKeyVisualPosition(key);
                     const sustained = true;
-                    playVisualFeedback('user', midi, x, y);
+                    playVisualFeedback('user', midi, x, y, { holdHighlight: true });
                     triggerDeepBlueNoteOn('user', midi, sustained);
                     recordPerformanceEvent({ type: 'note-on', midi, ringX: x, ringY: y, sustained });
                     activeVisualKeyStates.set(key, { midi });
@@ -2529,6 +2558,7 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
 
             if (visualState) {
                 recordPerformanceEvent({ type: 'note-off', midi: visualState.midi });
+                highlightKey('user', visualState.midi, false);
                 triggerDeepBlueNoteOff('user', visualState.midi);
                 activeVisualKeyStates.delete(key);
             }
