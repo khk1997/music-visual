@@ -177,17 +177,6 @@ import { createThemePanelController } from './ui/theme-panel.js';
             }
         }
 
-        function disposeCurrentInstrument() {
-            disposeLofiChain(lofiVibrato, lofiFilter);
-            if (instrument && typeof instrument.dispose === 'function') {
-                instrument.dispose();
-            }
-            instrument = null;
-            lofiVibrato = null;
-            lofiFilter = null;
-            activePianoKeyStates.clear();
-        }
-
         function disposePlaybackInstrument() {
             disposeLofiChain(playbackLofiVibrato, playbackLofiFilter);
             if (playbackInstrument && typeof playbackInstrument.dispose === 'function') {
@@ -395,16 +384,6 @@ import { createThemePanelController } from './ui/theme-panel.js';
             };
         }
 
-        async function createPianoInstrument() {
-            const created = await createInstrumentInstance('piano');
-            swapCurrentInstrument(created, 'piano');
-        }
-
-        async function createHarpInstrument() {
-            const created = await createInstrumentInstance('harp');
-            swapCurrentInstrument(created, 'harp');
-        }
-
         async function createPlaybackInstrument(type) {
             disposePlaybackInstrument();
 
@@ -415,16 +394,8 @@ import { createThemePanelController } from './ui/theme-panel.js';
         }
 
         async function createInstrument(type) {
-            if (type === 'piano') {
-                await createPianoInstrument();
-            }
-            else if (type === 'harp') {
-                await createHarpInstrument();
-            }
-            else {
-                const created = await createInstrumentInstance(type);
-                swapCurrentInstrument(created, type);
-            }
+            const created = await createInstrumentInstance(type);
+            swapCurrentInstrument(created, type);
         }
 
         async function initAudio() {
