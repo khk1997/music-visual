@@ -39,6 +39,8 @@ import {
 } from './core/config.js';
 import { createPerfMonitor } from './app/perf-monitor.js';
 import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
+import { createScreenController } from './ui/screen-controller.js';
+import { createThemePanelController } from './ui/theme-panel.js';
 
 // =========================================================
 // 1. 音源設定
@@ -636,128 +638,6 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             return currentScreen === 'free-play' && !isFreePlayThemeSelection;
         }
 
-        function resetModeTransitionState() {
-            while (modeTransitionTimers.length) {
-                clearTimeout(modeTransitionTimers.pop());
-            }
-
-            isModeTransitioning = false;
-            modePanel.classList.remove('is-transitioning', 'is-exiting');
-            for (const card of modeCards) {
-                card.classList.remove('is-selected', 'is-muted');
-            }
-        }
-
-        function transitionFromHome(selectedCard, nextScreen) {
-            if (isModeTransitioning || currentScreen !== 'home') return;
-
-            isModeTransitioning = true;
-            void playModeCardClickSound();
-            modePanel.classList.add('is-transitioning');
-
-            for (const card of modeCards) {
-                card.classList.toggle('is-selected', card === selectedCard);
-                card.classList.toggle('is-muted', card !== selectedCard);
-            }
-
-            modeTransitionTimers.push(window.setTimeout(() => {
-                modePanel.classList.add('is-exiting');
-            }, 300));
-
-            modeTransitionTimers.push(window.setTimeout(() => {
-                setScreen(nextScreen);
-                while (modeTransitionTimers.length) {
-                    clearTimeout(modeTransitionTimers.pop());
-                }
-                isModeTransitioning = false;
-            }, 760));
-        }
-
-        function setScreen(nextScreen, options = {}) {
-            const { skipThemeSelection = false, forceThemeSelection = false } = options;
-            const previousScreen = currentScreen;
-            currentScreen = nextScreen;
-
-            const isHome = nextScreen === 'home';
-            const isFreePlay = nextScreen === 'free-play';
-            const isAbsolutePitch = nextScreen === 'absolute-pitch';
-            const isExperienceScreen = isFreePlay || isAbsolutePitch;
-            const enteringFreePlay = isFreePlay && previousScreen !== 'free-play';
-
-            if (isFreePlay) {
-                isFreePlayThemeSelection = forceThemeSelection || (enteringFreePlay && !skipThemeSelection);
-                if (isFreePlayThemeSelection) {
-                    hasConfirmedThemeSelectionInCurrentFlow = false;
-                }
-            } else {
-                isFreePlayThemeSelection = false;
-                hasConfirmedThemeSelectionInCurrentFlow = false;
-            }
-
-            if (isFreePlayThemeSelection) {
-                if (isRecording) stopRecording();
-                if (isPlaybackActive) stopPlayback();
-            }
-
-            if (!isFreePlay) {
-                if (isRecording) stopRecording();
-                if (isPlaybackActive) stopPlayback();
-            }
-
-            if (!isAbsolutePitch) {
-                absolutePitch.updateIdleState();
-                absolutePitch.resetIntro();
-            }
-
-            if (isHome) {
-                resetModeTransitionState();
-            }
-
-            if (isFreePlayThemeSelection || !isFreePlay) {
-                resetThemeSelectionVisualState();
-            }
-
-            modeScreen.classList.toggle('hidden', !isHome);
-            playbackScreen.classList.toggle('active', isExperienceScreen);
-            playbackScreen.classList.toggle('theme-selecting', isFreePlay && isFreePlayThemeSelection);
-            bottomUi.classList.toggle('hidden', !isFreePlay || isFreePlayThemeSelection);
-            absolutePitchUi.classList.toggle('active', isAbsolutePitch);
-            backgroundToggleButton.classList.toggle('ui-hidden', !isFreePlay || isFreePlayThemeSelection);
-            recordToggleButton.classList.toggle('ui-hidden', !isFreePlay || isFreePlayThemeSelection);
-            playbackToggleButton.classList.toggle('ui-hidden', !isFreePlay || isFreePlayThemeSelection);
-            if (!isFreePlay) {
-                closeThemePanel();
-            } else if (isFreePlayThemeSelection) {
-                openThemePanel();
-            } else {
-                closeThemePanel();
-            }
-            modeStatus.textContent = isFreePlayThemeSelection
-                ? 'Select Theme'
-                : isAbsolutePitch
-                ? 'Perfect Pitch'
-                : 'Free Play';
-            document.body.style.cursor = isFreePlay && !isFreePlayThemeSelection ? 'crosshair' : 'default';
-            updateThemePanelSelection();
-        }
-
-        freePlayCard.addEventListener('click', () => {
-            transitionFromHome(freePlayCard, 'free-play');
-        });
-
-        absolutePitchCard.addEventListener('click', () => {
-            transitionFromHome(absolutePitchCard, 'absolute-pitch');
-        });
-
-        backHomeButton.addEventListener('click', () => {
-            void playBackHomeClickSound();
-            if (currentScreen === 'free-play' && !isFreePlayThemeSelection) {
-                setScreen('free-play', { forceThemeSelection: true });
-            } else {
-                setScreen('home');
-            }
-        });
-
         function nowSeconds() {
             return performance.now() * 0.001;
         }
@@ -869,9 +749,6 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             playMidiWithInstrument,
             playVisualFeedback
         });
-
-        setScreen('home');
-        absolutePitch.resetIntro();
 
         function schedulePlaybackLoopPass() {
             if (!isPlaybackActive) return;
@@ -1019,267 +896,6 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             return getCurrentBackgroundTheme().id === 'playstation-style';
         }
 
-        function getThemePanelPreviewIndex() {
-            return hoveredThemeIndex === null ? themePanelActiveIndex : hoveredThemeIndex;
-        }
-
-        function updateThemeListVisuals(activeIndex) {
-            if (!themeList) return;
-            const themeButtons = themeList.querySelectorAll('.theme-list-item');
-
-            for (const button of themeButtons) {
-                const buttonIndex = Number(button.dataset.themeIndex);
-                const offset = buttonIndex - activeIndex;
-                const absOffset = Math.abs(offset);
-                const clampedOffset = Math.max(-3, Math.min(3, offset));
-                const translateY = clampedOffset * 96;
-                const rotateX = clampedOffset * -16;
-                const scale = 1 - Math.min(absOffset, 3) * 0.08;
-                const opacity = absOffset === 0
-                    ? 1
-                    : absOffset === 1
-                        ? 0.78
-                        : absOffset === 2
-                            ? 0.32
-                            : 0.08;
-
-                button.style.transform = `translateY(${translateY}px) rotateX(${rotateX}deg) scale(${scale})`;
-                button.style.opacity = String(absOffset > 3 ? 0 : opacity);
-                button.style.filter = absOffset === 0
-                    ? 'brightness(1.03)'
-                    : `blur(${Math.min(absOffset, 3) * 0.65}px) brightness(${1 - Math.min(absOffset, 3) * 0.08})`;
-                button.style.zIndex = String(30 - Math.min(absOffset, 30));
-                button.classList.toggle('is-faded', absOffset > 2);
-                button.classList.toggle('is-active', buttonIndex === activeIndex);
-                button.parentElement?.style.setProperty('z-index', String(30 - Math.min(absOffset, 30)));
-            }
-        }
-
-        function setThemePanelActiveIndex(index, options = {}) {
-            const { syncHover = true } = options;
-            const boundedIndex = Math.max(0, Math.min(BACKGROUND_THEMES.length - 1, index));
-            themePanelActiveIndex = boundedIndex;
-            if (syncHover) {
-                hoveredThemeIndex = null;
-            }
-            updateThemePanelSelection();
-        }
-
-        function updateThemePanelSelection() {
-            const currentTheme = getCurrentBackgroundTheme();
-            const previewIndex = getThemePanelPreviewIndex();
-            const previewTheme = BACKGROUND_THEMES[(previewIndex + BACKGROUND_THEMES.length) % BACKGROUND_THEMES.length];
-            backgroundToggleButton.textContent = `Theme: ${currentTheme.label}`;
-
-            if (themePreviewTitle) {
-                themePreviewTitle.textContent = previewTheme.label;
-            }
-            if (themePreviewDescription) {
-                themePreviewDescription.textContent = previewTheme.description || 'Theme preview';
-            }
-            if (themePreviewMedia) {
-                themePreviewMedia.style.background = previewTheme.previewBackground || '';
-            }
-
-            if (!themeList || isThemeSelectionTransitioning) return;
-            const themeButtons = themeList.querySelectorAll('.theme-list-item');
-            const shouldShowSelected = !(currentScreen === 'free-play'
-                && isFreePlayThemeSelection
-                && !hasConfirmedThemeSelectionInCurrentFlow);
-            for (const button of themeButtons) {
-                const buttonIndex = Number(button.dataset.themeIndex);
-                button.classList.toggle('is-selected', shouldShowSelected && buttonIndex === currentBackgroundIndex);
-            }
-            updateThemeListVisuals(previewIndex);
-        }
-
-        function closeThemePanel() {
-            if (!themePanel) return;
-            themePanel.classList.remove('is-open');
-            themePanel.setAttribute('aria-hidden', 'true');
-            backgroundToggleButton.classList.remove('is-active');
-            hoveredThemeIndex = null;
-            themeDragState = null;
-            updateThemePanelSelection();
-        }
-
-        function clearThemeSelectionTransitionTimers() {
-            while (themeSelectionTransitionTimers.length) {
-                clearTimeout(themeSelectionTransitionTimers.pop());
-            }
-        }
-
-        function resetThemeSelectionVisualState() {
-            clearThemeSelectionTransitionTimers();
-            isThemeSelectionTransitioning = false;
-            if (!themePanel) return;
-            themePanel.classList.remove('is-transitioning', 'is-exiting');
-            if (!themeList) return;
-            const themeButtons = themeList.querySelectorAll('.theme-list-item');
-            for (const button of themeButtons) {
-                button.classList.remove('is-selected', 'is-muted', 'is-active', 'is-faded');
-                button.style.removeProperty('transform');
-                button.style.removeProperty('opacity');
-                button.style.removeProperty('filter');
-                button.style.removeProperty('z-index');
-            }
-        }
-
-        function startThemeSelectionTransition(index) {
-            if (!themePanel || !themeList || isThemeSelectionTransitioning) return;
-            const themeButtons = Array.from(themeList.querySelectorAll('.theme-list-item'));
-            if (themeButtons.length === 0) return;
-
-            void playModeCardClickSound();
-
-            if (document.activeElement instanceof HTMLElement) {
-                document.activeElement.blur();
-            }
-
-            for (const button of themeButtons) {
-                const buttonIndex = Number(button.dataset.themeIndex);
-                button.classList.toggle('is-selected', buttonIndex === index);
-                button.classList.toggle('is-muted', buttonIndex !== index);
-            }
-
-            isThemeSelectionTransitioning = true;
-            hasConfirmedThemeSelectionInCurrentFlow = true;
-            hoveredThemeIndex = null;
-            themePanel.classList.add('is-transitioning');
-            applyBackgroundTheme(index);
-
-            themeSelectionTransitionTimers.push(window.setTimeout(() => {
-                if (!themePanel) return;
-                themePanel.classList.add('is-exiting');
-            }, 300));
-
-            themeSelectionTransitionTimers.push(window.setTimeout(() => {
-                resetThemeSelectionVisualState();
-                setScreen('free-play', { skipThemeSelection: true });
-            }, 760));
-        }
-
-        function openThemePanel() {
-            if (!themePanel) return;
-            themePanel.classList.add('is-open');
-            themePanel.setAttribute('aria-hidden', 'false');
-            backgroundToggleButton.classList.add('is-active');
-            themePanelActiveIndex = currentBackgroundIndex;
-            hoveredThemeIndex = null;
-            updateThemePanelSelection();
-        }
-
-        function setupThemePanel() {
-            if (!themeList) return;
-            themeList.innerHTML = '';
-
-            const handleThemeDragMove = (clientY) => {
-                if (!themeDragState) return;
-                const deltaY = clientY - themeDragState.startY;
-                const nextIndex = Math.max(
-                    0,
-                    Math.min(
-                        BACKGROUND_THEMES.length - 1,
-                        themeDragState.startIndex - Math.round(deltaY / 86)
-                    )
-                );
-
-                if (nextIndex !== themePanelActiveIndex) {
-                    themePanelActiveIndex = nextIndex;
-                    hoveredThemeIndex = null;
-                    updateThemePanelSelection();
-                }
-
-                if (Math.abs(deltaY) > 10) {
-                    themeDragState.dragged = true;
-                }
-            };
-
-            themeList.addEventListener('pointerdown', (event) => {
-                if (!(event.target instanceof HTMLElement)) return;
-                if (!event.target.closest('.theme-list-item')) return;
-
-                themeDragState = {
-                    pointerId: event.pointerId,
-                    startY: event.clientY,
-                    startIndex: themePanelActiveIndex,
-                    dragged: false,
-                    targetIndex: Number((event.target.closest('.theme-list-item'))?.dataset.themeIndex ?? -1),
-                    targetWasActive: event.target.closest('.theme-list-item')?.classList.contains('is-active') ?? false
-                };
-                themeList.setPointerCapture(event.pointerId);
-            });
-
-            themeList.addEventListener('pointermove', (event) => {
-                if (!themeDragState || themeDragState.pointerId !== event.pointerId) return;
-                handleThemeDragMove(event.clientY);
-            });
-
-            const finishThemeDrag = (event) => {
-                if (!themeDragState || themeDragState.pointerId !== event.pointerId) return;
-
-                if (themeDragState.dragged) {
-                    suppressThemeClickUntil = performance.now() + 180;
-                } else if (
-                    themeDragState.targetIndex >= 0
-                    && performance.now() >= suppressThemeClickUntil
-                ) {
-                    if (!themeDragState.targetWasActive || themePanelActiveIndex !== themeDragState.targetIndex) {
-                        setThemePanelActiveIndex(themeDragState.targetIndex);
-                    } else {
-                        startThemeSelectionTransition(themeDragState.targetIndex);
-                    }
-                }
-                if (themeList.hasPointerCapture(event.pointerId)) {
-                    themeList.releasePointerCapture(event.pointerId);
-                }
-                themeDragState = null;
-            };
-
-            themeList.addEventListener('pointerup', finishThemeDrag);
-            themeList.addEventListener('pointercancel', finishThemeDrag);
-            themeList.addEventListener('wheel', (event) => {
-                event.preventDefault();
-                if (isThemeSelectionTransitioning) return;
-
-                const direction = event.deltaY > 0 ? 1 : -1;
-                if (direction === 0) return;
-
-                const nextIndex = Math.max(
-                    0,
-                    Math.min(BACKGROUND_THEMES.length - 1, themePanelActiveIndex + direction)
-                );
-
-                if (nextIndex !== themePanelActiveIndex) {
-                    themePanelActiveIndex = nextIndex;
-                    hoveredThemeIndex = null;
-                    updateThemePanelSelection();
-                }
-            }, { passive: false });
-
-            BACKGROUND_THEMES.forEach((theme, index) => {
-                const item = document.createElement('li');
-                item.className = 'theme-list-slot';
-                const button = document.createElement('button');
-                button.type = 'button';
-                button.className = 'theme-list-item';
-                button.dataset.themeIndex = String(index);
-                button.textContent = theme.label;
-                button.addEventListener('focus', () => {
-                    setThemePanelActiveIndex(index);
-                });
-                button.addEventListener('blur', () => {
-                    hoveredThemeIndex = null;
-                    updateThemePanelSelection();
-                });
-                item.appendChild(button);
-                themeList.appendChild(item);
-            });
-
-            themePanelActiveIndex = currentBackgroundIndex;
-            updateThemePanelSelection();
-        }
-
         function applyBackgroundTheme(index) {
             currentBackgroundIndex = (index + BACKGROUND_THEMES.length) % BACKGROUND_THEMES.length;
             const theme = BACKGROUND_THEMES[currentBackgroundIndex];
@@ -1292,12 +908,122 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
                 void createInstrument('piano');
             }
 
-            updateThemePanelSelection();
-
             if (backgroundVisualsReady) {
                 syncBackgroundVisualState();
             }
         }
+
+        const themePanelController = createThemePanelController({
+            themes: BACKGROUND_THEMES,
+            themePanel,
+            themeList,
+            themePreviewTitle,
+            themePreviewDescription,
+            themePreviewMedia,
+            backgroundToggleButton,
+            getCurrentBackgroundIndex: () => currentBackgroundIndex,
+            setCurrentBackgroundIndex: (value) => {
+                currentBackgroundIndex = value;
+            },
+            getHoveredThemeIndex: () => hoveredThemeIndex,
+            setHoveredThemeIndex: (value) => {
+                hoveredThemeIndex = value;
+            },
+            getThemePanelActiveIndex: () => themePanelActiveIndex,
+            setThemePanelActiveIndexState: (value) => {
+                themePanelActiveIndex = value;
+            },
+            getThemeDragState: () => themeDragState,
+            setThemeDragState: (value) => {
+                themeDragState = value;
+            },
+            getSuppressThemeClickUntil: () => suppressThemeClickUntil,
+            setSuppressThemeClickUntil: (value) => {
+                suppressThemeClickUntil = value;
+            },
+            getIsThemeSelectionTransitioning: () => isThemeSelectionTransitioning,
+            setIsThemeSelectionTransitioning: (value) => {
+                isThemeSelectionTransitioning = value;
+            },
+            getHasConfirmedThemeSelectionInCurrentFlow: () => hasConfirmedThemeSelectionInCurrentFlow,
+            setHasConfirmedThemeSelectionInCurrentFlow: (value) => {
+                hasConfirmedThemeSelectionInCurrentFlow = value;
+            },
+            getCurrentScreen: () => currentScreen,
+            getIsFreePlayThemeSelection: () => isFreePlayThemeSelection,
+            themeSelectionTransitionTimers,
+            getCurrentTheme: () => getCurrentBackgroundTheme(),
+            onThemeConfirm: () => {
+                screenController.setScreen('free-play', { skipThemeSelection: true });
+            },
+            onApplyTheme: (index) => {
+                applyBackgroundTheme(index);
+            },
+            onTransitionSound: () => {
+                void playModeCardClickSound();
+            }
+        });
+
+        const screenController = createScreenController({
+            modeScreen,
+            playbackScreen,
+            bottomUi,
+            absolutePitchUi,
+            backgroundToggleButton,
+            recordToggleButton,
+            playbackToggleButton,
+            modeStatus,
+            modePanel,
+            modeCards,
+            getCurrentScreen: () => currentScreen,
+            setCurrentScreen: (value) => {
+                currentScreen = value;
+            },
+            getIsFreePlayThemeSelection: () => isFreePlayThemeSelection,
+            setIsFreePlayThemeSelection: (value) => {
+                isFreePlayThemeSelection = value;
+            },
+            setHasConfirmedThemeSelectionInCurrentFlow: (value) => {
+                hasConfirmedThemeSelectionInCurrentFlow = value;
+            },
+            getIsRecording: () => isRecording,
+            stopRecording,
+            getIsPlaybackActive: () => isPlaybackActive,
+            stopPlayback,
+            absolutePitch,
+            themePanelController,
+            modeTransitionTimers,
+            getIsModeTransitioning: () => isModeTransitioning,
+            setIsModeTransitioning: (value) => {
+                isModeTransitioning = value;
+            },
+            onModeTransitionSound: () => {
+                void playModeCardClickSound();
+            }
+        });
+
+        const { setScreen, transitionFromHome } = screenController;
+        const { setupThemePanel, updateThemePanelSelection } = themePanelController;
+
+        freePlayCard.addEventListener('click', () => {
+            transitionFromHome(freePlayCard, 'free-play');
+        });
+
+        absolutePitchCard.addEventListener('click', () => {
+            transitionFromHome(absolutePitchCard, 'absolute-pitch');
+        });
+
+        backHomeButton.addEventListener('click', () => {
+            void playBackHomeClickSound();
+            if (currentScreen === 'free-play' && !isFreePlayThemeSelection) {
+                setScreen('free-play', { forceThemeSelection: true });
+            } else {
+                setScreen('home');
+            }
+        });
+
+        setScreen('home');
+        absolutePitch.resetIntro();
 
         backgroundToggleButton.classList.add('is-readonly');
 
