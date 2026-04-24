@@ -1556,8 +1556,59 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
         }
 
         const deepBlueBarTexture = createDeepBlueBarTexture();
-        const deepBlueJetGeometry = new THREE.PlaneGeometry(1, 1);
-        const deepBlueJetCoreGeometry = new THREE.PlaneGeometry(1, 1);
+        const WHITE_COLOR = new THREE.Color(0xffffff);
+        const MIST_TINT_COLOR = new THREE.Color(0x6f8cff);
+        const EFFECT_COLOR_PALETTE = [
+            new THREE.Color(0x00f5d4),
+            new THREE.Color(0x3cf0ff),
+            new THREE.Color(0x7a5cff),
+            new THREE.Color(0xff4fa3),
+            new THREE.Color(0xefffff)
+        ];
+        const DEEP_BLUE_BAR_MAX_INSTANCES = 144;
+        const DEEP_BLUE_BAR_BASE_WIDTH = 0.18;
+        const DEEP_BLUE_BAR_BASE_HEIGHT = 0.03;
+        const deepBlueBarGeometries = {
+            shadow: new THREE.PlaneGeometry(DEEP_BLUE_BAR_BASE_WIDTH * 1.68, DEEP_BLUE_BAR_BASE_HEIGHT * 1.14),
+            aura: new THREE.PlaneGeometry(DEEP_BLUE_BAR_BASE_WIDTH * 1.78, DEEP_BLUE_BAR_BASE_HEIGHT),
+            glow: new THREE.PlaneGeometry(DEEP_BLUE_BAR_BASE_WIDTH * 1.28, DEEP_BLUE_BAR_BASE_HEIGHT),
+            core: new THREE.PlaneGeometry(DEEP_BLUE_BAR_BASE_WIDTH * 0.82, DEEP_BLUE_BAR_BASE_HEIGHT)
+        };
+        const deepBlueBarShadowMaterialProps = {
+            color: 0x000000,
+            transparent: true,
+            opacity: 0.18,
+            blending: THREE.NormalBlending,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+            toneMapped: false
+        };
+        const deepBlueBarAuraMaterialProps = {
+            map: deepBlueBarTexture,
+            transparent: true,
+            opacity: 0.24,
+            blending: THREE.NormalBlending,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+            toneMapped: false
+        };
+        const deepBlueBarGlowMaterialProps = {
+            map: deepBlueBarTexture,
+            transparent: true,
+            opacity: 0.46,
+            blending: THREE.NormalBlending,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+            toneMapped: false
+        };
+        const deepBlueBarCoreMaterialProps = {
+            transparent: true,
+            opacity: 0.92,
+            blending: THREE.NormalBlending,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+            toneMapped: false
+        };
 
         // =========================================================
         // 7. 背景波紋
@@ -1578,7 +1629,10 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
         const DEEP_BLUE_BAR_PLANE_Z = -1.15;
         const activeDeepBlueBars = [];
         const liveDeepBlueBars = new Map();
+        const deepBlueBarInstanceScratch = new THREE.Object3D();
+        const deepBlueBarCoreColorScratch = new THREE.Color();
         let deepBlueBarGroup = null;
+        let deepBlueBarInstancing = null;
         let deepBlueMaskMesh = null;
         const bgMaterial = new THREE.ShaderMaterial({
             uniforms: bgUniforms,
@@ -1633,6 +1687,135 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             `,
             transparent: true,
             blending: THREE.NormalBlending,
+            depthWrite: false
+        });
+        const deepBlueJetMaterial = new THREE.ShaderMaterial({
+            uniforms: { uTex: { value: mistTex } },
+            vertexShader: `
+                attribute float aSize;
+                attribute float aAlpha;
+                attribute vec3 aColor;
+                varying float vAlpha;
+                varying vec3 vColor;
+
+                void main() {
+                    vAlpha = aAlpha;
+                    vColor = aColor;
+                    vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+                    gl_PointSize = aSize * (0.45 + aAlpha * 0.9) * (350.0 / -mvPos.z);
+                    gl_Position = projectionMatrix * mvPos;
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D uTex;
+                varying float vAlpha;
+                varying vec3 vColor;
+
+                void main() {
+                    vec4 tex = texture2D(uTex, gl_PointCoord);
+                    gl_FragColor = vec4(vColor * tex.rgb, tex.a * vAlpha);
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        const sparkMaterial = new THREE.ShaderMaterial({
+            uniforms: { uTex: { value: sparkTex } },
+            vertexShader: `
+                attribute float aSize;
+                attribute float aAlpha;
+                attribute float aType;
+                attribute float aRotX;
+                attribute float aRotY;
+                attribute float aRotZ;
+
+                varying float vAlpha;
+                varying float vType;
+                varying float vRotX;
+                varying float vRotY;
+                varying float vRotZ;
+
+                void main() {
+                    vAlpha = aAlpha;
+                    vType = aType;
+                    vRotX = aRotX;
+                    vRotY = aRotY;
+                    vRotZ = aRotZ;
+
+                    vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+                    gl_PointSize = aSize * (0.3 + 0.7 * aAlpha) * (350.0 / -mvPos.z);
+                    gl_Position = projectionMatrix * mvPos;
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D uTex;
+
+                varying float vAlpha;
+                varying float vType;
+                varying float vRotX;
+                varying float vRotY;
+                varying float vRotZ;
+
+                void main() {
+                    vec2 uv = gl_PointCoord - vec2(0.5);
+
+                    float cY = cos(vRotY);
+                    float cX = cos(vRotX);
+                    float sZ = sin(vRotZ);
+                    float cZ = cos(vRotZ);
+
+                    vec2 rotUV = vec2(
+                        uv.x * cZ - uv.y * sZ,
+                        uv.x * sZ + uv.y * cZ
+                    );
+
+                    vec2 rUV = rotUV;
+                    rUV.x /= (abs(cY) < 0.15 ? 0.15 : cY);
+                    rUV.y /= (abs(cX) < 0.15 ? 0.15 : cX);
+
+                    if (abs(rUV.x) > 0.5 || abs(rUV.y) > 0.5) discard;
+
+                    vec2 finalUV = rUV + 0.5;
+                    finalUV.x = (finalUV.x + floor(vType + 0.5)) / 4.0;
+
+                    vec4 texColor = texture2D(uTex, finalUV);
+                    gl_FragColor = vec4(texColor.rgb, texColor.a * vAlpha);
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        const mistMaterial = new THREE.ShaderMaterial({
+            uniforms: { uTex: { value: mistTex } },
+            vertexShader: `
+                attribute float aSize;
+                attribute float aAlpha;
+                attribute vec3 aColor;
+                varying float vAlpha;
+                varying vec3 vColor;
+
+                void main() {
+                    vAlpha = aAlpha;
+                    vColor = aColor;
+                    vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+                    gl_PointSize = aSize * (350.0 / -mvPos.z);
+                    gl_Position = projectionMatrix * mvPos;
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D uTex;
+                varying float vAlpha;
+                varying vec3 vColor;
+
+                void main() {
+                    vec4 tex = texture2D(uTex, gl_PointCoord);
+                    gl_FragColor = vec4(vColor * tex.rgb, tex.a * vAlpha);
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
             depthWrite: false
         });
 
@@ -1700,6 +1883,7 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             deepBlueBarGroup = new THREE.Group();
             deepBlueBarGroup.renderOrder = 1;
             scene.add(deepBlueBarGroup);
+            deepBlueBarInstancing = createDeepBlueBarInstancingSystem(deepBlueBarGroup);
             updateDeepBlueMask();
         }
 
@@ -1709,11 +1893,7 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
 
         function clearDeepBlueBars() {
             for (let i = activeDeepBlueBars.length - 1; i >= 0; i--) {
-                const bar = activeDeepBlueBars[i];
-                if (deepBlueBarGroup) {
-                    deepBlueBarGroup.remove(bar.mesh);
-                }
-                disposeDeepBlueBarMesh(bar.mesh);
+                releaseDeepBlueBarInstance(activeDeepBlueBars[i]);
             }
             activeDeepBlueBars.length = 0;
             liveDeepBlueBars.clear();
@@ -1800,91 +1980,232 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             return [1, 3, 6, 8, 10].includes(midi % 12);
         }
 
-        function createDeepBlueBarMesh(color, width, height, isBlackKey) {
-            const group = new THREE.Group();
+        function createDeepBlueBarAlphaMaterial(config) {
+            const material = new THREE.MeshBasicMaterial(config);
+            material.onBeforeCompile = (shader) => {
+                shader.vertexShader = shader.vertexShader.replace(
+                    '#include <common>',
+                    '#include <common>\nattribute float instanceAlpha;\nvarying float vInstanceAlpha;'
+                ).replace(
+                    '#include <begin_vertex>',
+                    '#include <begin_vertex>\nvInstanceAlpha = instanceAlpha;'
+                );
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <common>',
+                    '#include <common>\nvarying float vInstanceAlpha;'
+                ).replace(
+                    'vec4 diffuseColor = vec4( diffuse, opacity );',
+                    'vec4 diffuseColor = vec4( diffuse, opacity * vInstanceAlpha );'
+                );
+            };
+            return material;
+        }
+
+        function createDeepBlueBarInstancedLayer({
+            baseGeometry,
+            material,
+            renderOrder
+        }) {
+            const geometry = baseGeometry.clone();
+            const alphaAttr = new THREE.InstancedBufferAttribute(new Float32Array(DEEP_BLUE_BAR_MAX_INSTANCES), 1);
+            geometry.setAttribute('instanceAlpha', alphaAttr);
+
+            const mesh = new THREE.InstancedMesh(geometry, material, DEEP_BLUE_BAR_MAX_INSTANCES);
+            mesh.renderOrder = renderOrder;
+            mesh.frustumCulled = false;
+            mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+            for (let i = 0; i < DEEP_BLUE_BAR_MAX_INSTANCES; i++) {
+                deepBlueBarInstanceScratch.position.set(0, 0, 0);
+                deepBlueBarInstanceScratch.scale.set(0.0001, 0.0001, 0.0001);
+                deepBlueBarInstanceScratch.updateMatrix();
+                mesh.setMatrixAt(i, deepBlueBarInstanceScratch.matrix);
+                mesh.setColorAt(i, WHITE_COLOR);
+                alphaAttr.setX(i, 0);
+            }
+
+            mesh.instanceMatrix.needsUpdate = true;
+            alphaAttr.needsUpdate = true;
+            return { mesh, alphaAttr };
+        }
+
+        function createDeepBlueBarSet({ isBlackKey, parent }) {
+            const freeSlots = [];
+            const usedSlots = new Uint8Array(DEEP_BLUE_BAR_MAX_INSTANCES);
+            for (let i = DEEP_BLUE_BAR_MAX_INSTANCES - 1; i >= 0; i--) {
+                freeSlots.push(i);
+            }
+
             const renderBaseOrder = isBlackKey ? 6 : 3;
-            let shadowMesh = null;
-
-            if (isBlackKey) {
-                const shadowMaterial = new THREE.MeshBasicMaterial({
-                    color: 0x000000,
-                    transparent: true,
-                    opacity: 0.18,
-                    blending: THREE.NormalBlending,
-                    depthWrite: false,
-                    side: THREE.DoubleSide,
-                    toneMapped: false
-                });
-                shadowMesh = new THREE.Mesh(new THREE.PlaneGeometry(width * 1.68, height * 1.14), shadowMaterial);
-                shadowMesh.position.set(0, -height * 0.03, -0.001);
-                shadowMesh.renderOrder = renderBaseOrder;
-                group.add(shadowMesh);
-            }
-
-            const auraMaterial = new THREE.MeshBasicMaterial({
-                map: deepBlueBarTexture,
-                color,
-                transparent: true,
-                opacity: 0.24,
-                blending: THREE.NormalBlending,
-                depthWrite: false,
-                side: THREE.DoubleSide,
-                toneMapped: false
+            const shadowLayer = isBlackKey
+                ? createDeepBlueBarInstancedLayer({
+                    baseGeometry: deepBlueBarGeometries.shadow,
+                    material: createDeepBlueBarAlphaMaterial(deepBlueBarShadowMaterialProps),
+                    renderOrder: renderBaseOrder
+                })
+                : null;
+            const auraLayer = createDeepBlueBarInstancedLayer({
+                baseGeometry: deepBlueBarGeometries.aura,
+                material: createDeepBlueBarAlphaMaterial({
+                    color: 0xffffff,
+                    ...deepBlueBarAuraMaterialProps
+                }),
+                renderOrder: renderBaseOrder + 1
             });
-            const glowMaterial = new THREE.MeshBasicMaterial({
-                map: deepBlueBarTexture,
-                color,
-                transparent: true,
-                opacity: 0.46,
-                blending: THREE.NormalBlending,
-                depthWrite: false,
-                side: THREE.DoubleSide,
-                toneMapped: false
+            const glowLayer = createDeepBlueBarInstancedLayer({
+                baseGeometry: deepBlueBarGeometries.glow,
+                material: createDeepBlueBarAlphaMaterial({
+                    color: 0xffffff,
+                    ...deepBlueBarGlowMaterialProps
+                }),
+                renderOrder: renderBaseOrder + 2
             });
-            const coreMaterial = new THREE.MeshBasicMaterial({
-                color: color.clone().lerp(new THREE.Color(0xffffff), 0.08),
-                transparent: true,
-                opacity: 0.92,
-                blending: THREE.NormalBlending,
-                depthWrite: false,
-                side: THREE.DoubleSide,
-                toneMapped: false
+            const coreLayer = createDeepBlueBarInstancedLayer({
+                baseGeometry: deepBlueBarGeometries.core,
+                material: createDeepBlueBarAlphaMaterial({
+                    color: 0xffffff,
+                    ...deepBlueBarCoreMaterialProps
+                }),
+                renderOrder: renderBaseOrder + 3
             });
 
-            const auraMesh = new THREE.Mesh(new THREE.PlaneGeometry(width * 1.78, height), auraMaterial);
-            const glowMesh = new THREE.Mesh(new THREE.PlaneGeometry(width * 1.28, height), glowMaterial);
-            const coreMesh = new THREE.Mesh(new THREE.PlaneGeometry(width * 0.82, height), coreMaterial);
+            if (shadowLayer) parent.add(shadowLayer.mesh);
+            parent.add(auraLayer.mesh);
+            parent.add(glowLayer.mesh);
+            parent.add(coreLayer.mesh);
 
-            auraMesh.renderOrder = renderBaseOrder + 1;
-            glowMesh.renderOrder = renderBaseOrder + 2;
-            coreMesh.renderOrder = renderBaseOrder + 3;
-
-            group.add(auraMesh);
-            group.add(glowMesh);
-            group.add(coreMesh);
-            group.userData = { shadowMesh, auraMesh, glowMesh, coreMesh, isBlackKey };
-            return group;
+            return {
+                isBlackKey,
+                freeSlots,
+                usedSlots,
+                shadowLayer,
+                auraLayer,
+                glowLayer,
+                coreLayer
+            };
         }
 
-        function updateDeepBlueBarGlow(bar, baseOpacity) {
+        function createDeepBlueBarInstancingSystem(parent) {
+            return {
+                white: createDeepBlueBarSet({ isBlackKey: false, parent }),
+                black: createDeepBlueBarSet({ isBlackKey: true, parent })
+            };
+        }
+
+        function getDeepBlueBarSet(isBlackKey) {
+            return isBlackKey ? deepBlueBarInstancing?.black : deepBlueBarInstancing?.white;
+        }
+
+        function syncDeepBlueBarSetCount(barSet) {
+            if (!barSet) return;
+
+            let highestUsedSlot = -1;
+            for (let i = barSet.usedSlots.length - 1; i >= 0; i--) {
+                if (barSet.usedSlots[i]) {
+                    highestUsedSlot = i;
+                    break;
+                }
+            }
+
+            const nextCount = highestUsedSlot + 1;
+            if (barSet.shadowLayer) {
+                barSet.shadowLayer.mesh.count = nextCount;
+            }
+            barSet.auraLayer.mesh.count = nextCount;
+            barSet.glowLayer.mesh.count = nextCount;
+            barSet.coreLayer.mesh.count = nextCount;
+        }
+
+        function updateDeepBlueBarLayerInstance(layer, slot, x, y, z, scaleY, color, alpha) {
+            if (!layer) return;
+            deepBlueBarInstanceScratch.position.set(x, y, z);
+            deepBlueBarInstanceScratch.scale.set(1, scaleY, 1);
+            deepBlueBarInstanceScratch.updateMatrix();
+            layer.mesh.setMatrixAt(slot, deepBlueBarInstanceScratch.matrix);
+            layer.mesh.setColorAt(slot, color);
+            layer.alphaAttr.setX(slot, alpha);
+            layer.mesh.instanceMatrix.needsUpdate = true;
+            layer.mesh.instanceColor.needsUpdate = true;
+            layer.alphaAttr.needsUpdate = true;
+        }
+
+        function updateDeepBlueBarInstance(bar, baseOpacity) {
+            const barSet = getDeepBlueBarSet(bar.isBlackKey);
+            if (!barSet) return;
+
             const shimmer = 0.94 + Math.sin(performance.now() * 0.01 + bar.midi * 0.35) * 0.08;
-            const visuals = bar.mesh.userData;
-            if (!visuals) return;
+            const scaleY = bar.currentHeight / bar.baseHeight;
+            const centerY = bar.positionY;
 
-            if (visuals.shadowMesh) {
-                visuals.shadowMesh.material.opacity = baseOpacity * 0.18;
+            if (barSet.shadowLayer) {
+                updateDeepBlueBarLayerInstance(
+                    barSet.shadowLayer,
+                    bar.slot,
+                    bar.x,
+                    centerY - bar.currentHeight * 0.03,
+                    DEEP_BLUE_BAR_PLANE_Z - 0.001,
+                    scaleY,
+                    WHITE_COLOR,
+                    baseOpacity * 0.18
+                );
             }
-            visuals.auraMesh.material.opacity = baseOpacity * 0.26 * shimmer;
-            visuals.glowMesh.material.opacity = baseOpacity * 0.78 * shimmer;
-            visuals.coreMesh.material.opacity = Math.min(1, baseOpacity * 1.08);
+
+            updateDeepBlueBarLayerInstance(
+                barSet.auraLayer,
+                bar.slot,
+                bar.x,
+                centerY,
+                DEEP_BLUE_BAR_PLANE_Z,
+                scaleY,
+                bar.color,
+                baseOpacity * 0.26 * shimmer
+            );
+            updateDeepBlueBarLayerInstance(
+                barSet.glowLayer,
+                bar.slot,
+                bar.x,
+                centerY,
+                DEEP_BLUE_BAR_PLANE_Z,
+                scaleY,
+                bar.color,
+                baseOpacity * 0.78 * shimmer
+            );
+            updateDeepBlueBarLayerInstance(
+                barSet.coreLayer,
+                bar.slot,
+                bar.x,
+                centerY,
+                DEEP_BLUE_BAR_PLANE_Z,
+                scaleY,
+                bar.coreColor,
+                Math.min(1, baseOpacity * 1.08)
+            );
         }
 
-        function disposeDeepBlueBarMesh(mesh) {
-            if (!mesh) return;
-            mesh.traverse((child) => {
-                if (child.geometry) child.geometry.dispose();
-                if (child.material) child.material.dispose();
-            });
+        function acquireDeepBlueBarSlot(isBlackKey) {
+            const barSet = getDeepBlueBarSet(isBlackKey);
+            if (!barSet || barSet.freeSlots.length === 0) return null;
+            const slot = barSet.freeSlots.pop();
+            barSet.usedSlots[slot] = 1;
+            syncDeepBlueBarSetCount(barSet);
+            return slot;
+        }
+
+        function releaseDeepBlueBarInstance(bar) {
+            if (!bar) return;
+
+            const barSet = getDeepBlueBarSet(bar.isBlackKey);
+            if (!barSet) return;
+
+            updateDeepBlueBarLayerInstance(barSet.auraLayer, bar.slot, 0, 0, DEEP_BLUE_BAR_PLANE_Z, 0.0001, WHITE_COLOR, 0);
+            updateDeepBlueBarLayerInstance(barSet.glowLayer, bar.slot, 0, 0, DEEP_BLUE_BAR_PLANE_Z, 0.0001, WHITE_COLOR, 0);
+            updateDeepBlueBarLayerInstance(barSet.coreLayer, bar.slot, 0, 0, DEEP_BLUE_BAR_PLANE_Z, 0.0001, WHITE_COLOR, 0);
+            if (barSet.shadowLayer) {
+                updateDeepBlueBarLayerInstance(barSet.shadowLayer, bar.slot, 0, 0, DEEP_BLUE_BAR_PLANE_Z - 0.001, 0.0001, WHITE_COLOR, 0);
+            }
+            barSet.usedSlots[bar.slot] = 0;
+            barSet.freeSlots.push(bar.slot);
+            syncDeepBlueBarSetCount(barSet);
         }
 
         function getDeepBlueBarKey(source, midi) {
@@ -1901,20 +2222,24 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
 
             const launchPoint = getMidiLaunchPosition(midi, DEEP_BLUE_BAR_PLANE_Z);
             const blackKey = isBlackKeyMidi(midi);
-            const barWidth = 0.18;
-            const initialHeight = 0.03;
+            const slot = acquireDeepBlueBarSlot(blackKey);
+            if (slot === null) return;
+            const initialHeight = DEEP_BLUE_BAR_BASE_HEIGHT;
             const minFloatingHeight = 0.2 + ((midi % 12) / 12) * 0.1;
             const color = getEffectColor(midi);
             const queuedLaunchY = getQueuedLaunchY(midi, launchPoint.y, initialHeight);
-            const mesh = createDeepBlueBarMesh(color, barWidth, initialHeight, blackKey);
-            mesh.position.set(launchPoint.x, queuedLaunchY + initialHeight * 0.5, DEEP_BLUE_BAR_PLANE_Z);
-            deepBlueBarGroup.add(mesh);
+            const coreColor = color.clone().lerp(WHITE_COLOR, 0.08);
             spawnDeepBlueJet(launchPoint, midi, blackKey);
 
             const bar = {
                 key: barKey,
-                mesh,
+                slot,
                 midi,
+                isBlackKey: blackKey,
+                x: launchPoint.x,
+                positionY: queuedLaunchY + initialHeight * 0.5,
+                color,
+                coreColor,
                 launchY: queuedLaunchY,
                 entryY: launchPoint.y,
                 topY: queuedLaunchY + initialHeight,
@@ -1933,6 +2258,7 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
                 jetPulseTimer: 0.22 + Math.random() * 0.12
             };
 
+            updateDeepBlueBarInstance(bar, bar.glowBaseOpacity);
             activeDeepBlueBars.push(bar);
 
             if (isSustained) {
@@ -1968,38 +2294,33 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
                 if (bar.holding) {
                     bar.topY += bar.velocity;
                     bar.currentHeight = Math.max(bar.baseHeight, bar.topY - bar.entryY);
-                    bar.mesh.scale.y = bar.currentHeight / bar.baseHeight;
-                    bar.mesh.position.y = bar.entryY + bar.currentHeight * 0.5;
+                    bar.positionY = bar.entryY + bar.currentHeight * 0.5;
                     targetGlowBaseOpacity = 0.88;
 
                     bar.jetPulseTimer -= 1 / 60;
                     if (bar.jetPulseTimer <= 0) {
-                        spawnDeepBlueJet({ x: bar.mesh.position.x, y: bar.entryY }, bar.midi, isBlackKeyMidi(bar.midi), true);
+                        spawnDeepBlueJet({ x: bar.x, y: bar.entryY }, bar.midi, isBlackKeyMidi(bar.midi), true);
                         bar.jetPulseTimer = 0.3 + Math.random() * 0.18;
                     }
                 } else if (bar.sprouting) {
                     bar.currentHeight = Math.min(bar.targetHeight, bar.currentHeight + bar.releaseGrowthSpeed);
-                    bar.mesh.scale.y = bar.currentHeight / bar.baseHeight;
-                    bar.mesh.position.y = bar.launchY + bar.currentHeight * 0.5;
+                    bar.positionY = bar.launchY + bar.currentHeight * 0.5;
                     targetGlowBaseOpacity = 0.88;
 
                     if (bar.currentHeight >= bar.targetHeight - 0.0001) {
                         bar.sprouting = false;
                     }
                 } else {
-                    bar.mesh.position.y += bar.velocity;
-                    bar.mesh.position.x += bar.drift;
+                    bar.positionY += bar.velocity;
+                    bar.x += bar.drift;
                     bar.launchY += bar.velocity;
                 }
 
                 bar.glowBaseOpacity += (targetGlowBaseOpacity - bar.glowBaseOpacity) * 0.1;
-                updateDeepBlueBarGlow(bar, bar.glowBaseOpacity);
+                updateDeepBlueBarInstance(bar, bar.glowBaseOpacity);
 
-                if (bar.mesh.position.y > upperBound) {
-                    if (deepBlueBarGroup) {
-                        deepBlueBarGroup.remove(bar.mesh);
-                    }
-                    disposeDeepBlueBarMesh(bar.mesh);
+                if (bar.positionY > upperBound) {
+                    releaseDeepBlueBarInstance(bar);
                     activeDeepBlueBars.splice(i, 1);
                 }
             }
@@ -2015,6 +2336,9 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
         const activeSparks = [];
         const activeMists = [];
         const activeDeepBlueJets = [];
+        const pooledSparks = [];
+        const pooledMists = [];
+        const DEEP_BLUE_JET_MAX_PARTICLES = 960;
         let impactIdx = 0;
 
         const perfMonitor = createPerfMonitor({
@@ -2032,42 +2356,218 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
         });
 
         function getEffectColor(midi) {
-            const palette = [
-                new THREE.Color(0x00f5d4),
-                new THREE.Color(0x3cf0ff),
-                new THREE.Color(0x7a5cff),
-                new THREE.Color(0xff4fa3),
-                new THREE.Color(0xefffff)
-            ];
-            return palette[Math.abs(midi) % palette.length].clone();
+            return EFFECT_COLOR_PALETTE[Math.abs(midi) % EFFECT_COLOR_PALETTE.length].clone();
+        }
+
+        function createDeepBlueJetBatch(renderOrder) {
+            const geo = new THREE.BufferGeometry();
+            const pos = new Float32Array(DEEP_BLUE_JET_MAX_PARTICLES * 3);
+            const vel = new Float32Array(DEEP_BLUE_JET_MAX_PARTICLES * 3);
+            const drift = new Float32Array(DEEP_BLUE_JET_MAX_PARTICLES * 3);
+            const sizes = new Float32Array(DEEP_BLUE_JET_MAX_PARTICLES);
+            const alphas = new Float32Array(DEEP_BLUE_JET_MAX_PARTICLES);
+            const colors = new Float32Array(DEEP_BLUE_JET_MAX_PARTICLES * 3);
+            const ages = new Float32Array(DEEP_BLUE_JET_MAX_PARTICLES);
+            const phases = new Float32Array(DEEP_BLUE_JET_MAX_PARTICLES);
+            const swirl = new Float32Array(DEEP_BLUE_JET_MAX_PARTICLES);
+            const freeIndices = [];
+
+            for (let i = DEEP_BLUE_JET_MAX_PARTICLES - 1; i >= 0; i--) {
+                freeIndices.push(i);
+            }
+
+            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+            geo.setAttribute('aAlpha', new THREE.BufferAttribute(alphas, 1));
+            geo.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+
+            const points = new THREE.Points(geo, deepBlueJetMaterial);
+            points.renderOrder = renderOrder;
+            points.visible = false;
+            scene.add(points);
+
+            return {
+                points,
+                pos,
+                vel,
+                drift,
+                sizes,
+                alphas,
+                colors,
+                ages,
+                phases,
+                swirl,
+                freeIndices,
+                posAttr: geo.attributes.position,
+                sizeAttr: geo.attributes.aSize,
+                alphaAttr: geo.attributes.aAlpha,
+                colorAttr: geo.attributes.aColor
+            };
+        }
+
+        const deepBlueJetBatches = {
+            white: createDeepBlueJetBatch(8),
+            black: createDeepBlueJetBatch(11)
+        };
+
+        function acquireDeepBlueJetIndices(batch, count) {
+            if (batch.freeIndices.length < count) {
+                return null;
+            }
+
+            const indices = new Array(count);
+            for (let i = 0; i < count; i++) {
+                indices[i] = batch.freeIndices.pop();
+            }
+            batch.points.visible = true;
+            return indices;
+        }
+
+        function releaseDeepBlueJetEffect(effect) {
+            const { batch, indices } = effect;
+            for (let i = 0; i < indices.length; i++) {
+                const index = indices[i];
+                batch.alphas[index] = 0;
+                batch.sizes[index] = 0;
+                batch.pos[index * 3] = 0;
+                batch.pos[index * 3 + 1] = 0;
+                batch.pos[index * 3 + 2] = 0;
+                batch.freeIndices.push(index);
+            }
+
+            batch.alphaAttr.needsUpdate = true;
+            batch.sizeAttr.needsUpdate = true;
+            batch.posAttr.needsUpdate = true;
+            if (batch.freeIndices.length === DEEP_BLUE_JET_MAX_PARTICLES) {
+                batch.points.visible = false;
+            }
+        }
+
+        function createSparkEffect(count) {
+            const geo = new THREE.BufferGeometry();
+            const pos = new Float32Array(count * 3);
+            const vel = new Float32Array(count * 3);
+            const sizes = new Float32Array(count);
+            const alphas = new Float32Array(count);
+            const types = new Float32Array(count);
+            const rx = new Float32Array(count);
+            const ry = new Float32Array(count);
+            const rz = new Float32Array(count);
+            const rvx = new Float32Array(count);
+            const rvy = new Float32Array(count);
+            const rvz = new Float32Array(count);
+
+            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+            geo.setAttribute('aAlpha', new THREE.BufferAttribute(alphas, 1));
+            geo.setAttribute('aType', new THREE.BufferAttribute(types, 1));
+            geo.setAttribute('aRotX', new THREE.BufferAttribute(rx, 1));
+            geo.setAttribute('aRotY', new THREE.BufferAttribute(ry, 1));
+            geo.setAttribute('aRotZ', new THREE.BufferAttribute(rz, 1));
+
+            const points = new THREE.Points(geo, sparkMaterial);
+            points.renderOrder = 2;
+            points.visible = false;
+
+            return {
+                points,
+                geo,
+                pos,
+                vel,
+                sizes,
+                alphas,
+                types,
+                rx,
+                ry,
+                rz,
+                rvx,
+                rvy,
+                rvz,
+                posAttr: geo.attributes.position,
+                sizeAttr: geo.attributes.aSize,
+                alphaAttr: geo.attributes.aAlpha,
+                typeAttr: geo.attributes.aType,
+                rotXAttr: geo.attributes.aRotX,
+                rotYAttr: geo.attributes.aRotY,
+                rotZAttr: geo.attributes.aRotZ
+            };
+        }
+
+        function acquireSparkEffect(count) {
+            const effect = pooledSparks.pop() ?? createSparkEffect(count);
+            effect.points.visible = true;
+            scene.add(effect.points);
+            return effect;
+        }
+
+        function releaseSparkEffect(effect) {
+            scene.remove(effect.points);
+            effect.points.visible = false;
+            pooledSparks.push(effect);
+        }
+
+        function createMistEffect(count) {
+            const geo = new THREE.BufferGeometry();
+            const pos = new Float32Array(count * 3);
+            const drift = new Float32Array(count * 3);
+            const sizes = new Float32Array(count);
+            const alphas = new Float32Array(count);
+            const colors = new Float32Array(count * 3);
+
+            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+            geo.setAttribute('aAlpha', new THREE.BufferAttribute(alphas, 1));
+            geo.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+
+            const points = new THREE.Points(geo, mistMaterial);
+            points.renderOrder = 1;
+            points.visible = false;
+
+            return {
+                points,
+                geo,
+                pos,
+                drift,
+                sizes,
+                alphas,
+                colors,
+                posAttr: geo.attributes.position,
+                sizeAttr: geo.attributes.aSize,
+                alphaAttr: geo.attributes.aAlpha,
+                colorAttr: geo.attributes.aColor
+            };
+        }
+
+        function acquireMistEffect(count) {
+            const effect = pooledMists.pop() ?? createMistEffect(count);
+            effect.points.visible = true;
+            scene.add(effect.points);
+            return effect;
+        }
+
+        function releaseMistEffect(effect) {
+            scene.remove(effect.points);
+            effect.points.visible = false;
+            pooledMists.push(effect);
         }
 
         function clearActiveSparks() {
             for (let i = activeSparks.length - 1; i >= 0; i--) {
-                const s = activeSparks[i];
-                scene.remove(s.points);
-                s.geo.dispose();
-                s.points.material.dispose();
+                releaseSparkEffect(activeSparks[i]);
             }
             activeSparks.length = 0;
         }
 
         function clearActiveMists() {
             for (let i = activeMists.length - 1; i >= 0; i--) {
-                const m = activeMists[i];
-                scene.remove(m.points);
-                m.geo.dispose();
-                m.points.material.dispose();
+                releaseMistEffect(activeMists[i]);
             }
             activeMists.length = 0;
         }
 
         function clearActiveDeepBlueJets() {
             for (let i = activeDeepBlueJets.length - 1; i >= 0; i--) {
-                const jet = activeDeepBlueJets[i];
-                scene.remove(jet.points);
-                jet.geo.dispose();
-                jet.points.material.dispose();
+                releaseDeepBlueJetEffect(activeDeepBlueJets[i]);
             }
             activeDeepBlueJets.length = 0;
         }
@@ -2123,18 +2623,24 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             const count = isHeldPulse
                 ? (isBlackKey ? 10 : 8)
                 : (isBlackKey ? 12 : 10);
-            const geo = new THREE.BufferGeometry();
-            const pos = new Float32Array(count * 3);
-            const vel = new Float32Array(count * 3);
-            const drift = new Float32Array(count * 3);
-            const sizes = new Float32Array(count);
-            const alphas = new Float32Array(count);
-            const colors = new Float32Array(count * 3);
-            const ages = new Float32Array(count);
-            const phases = new Float32Array(count);
-            const swirl = new Float32Array(count);
+            const batch = isBlackKey ? deepBlueJetBatches.black : deepBlueJetBatches.white;
+            const indices = acquireDeepBlueJetIndices(batch, count);
+            if (!indices) return;
+            const {
+                pos,
+                vel,
+                drift,
+                sizes,
+                alphas,
+                colors,
+                ages,
+                phases,
+                swirl
+            } = batch;
 
             for (let i = 0; i < count; i++) {
+                const particleIndex = indices[i];
+                const offset = particleIndex * 3;
                 const spread = (Math.random() - 0.5) * (isHeldPulse
                     ? (isBlackKey ? 0.016 : 0.022)
                     : (isBlackKey ? 0.014 : 0.019));
@@ -2142,92 +2648,46 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
                     ? 0.004 + Math.random() * 0.006
                     : 0.0045 + Math.random() * 0.0065;
                 const color = getEffectColor(midi).lerp(
-                    new THREE.Color(0xffffff),
+                    WHITE_COLOR,
                     isHeldPulse
                         ? 0.12 + Math.random() * 0.08
                         : 0.18 + Math.random() * 0.1
                 );
 
-                pos[i * 3] = point.x + spread * 0.3;
-                pos[i * 3 + 1] = point.y - 0.008 + Math.random() * 0.012;
-                pos[i * 3 + 2] = DEEP_BLUE_BAR_PLANE_Z + 0.008 + (Math.random() - 0.5) * 0.006;
+                pos[offset] = point.x + spread * 0.3;
+                pos[offset + 1] = point.y - 0.008 + Math.random() * 0.012;
+                pos[offset + 2] = DEEP_BLUE_BAR_PLANE_Z + 0.008 + (Math.random() - 0.5) * 0.006;
 
-                vel[i * 3] = spread * 0.16;
-                vel[i * 3 + 1] = lift;
-                vel[i * 3 + 2] = 0;
+                vel[offset] = spread * 0.16;
+                vel[offset + 1] = lift;
+                vel[offset + 2] = 0;
 
-                drift[i * 3] = (Math.random() - 0.5) * 0.0014;
-                drift[i * 3 + 1] = 0.00055 + Math.random() * 0.0008;
-                drift[i * 3 + 2] = (Math.random() - 0.5) * 0.00035;
+                drift[offset] = (Math.random() - 0.5) * 0.0014;
+                drift[offset + 1] = 0.00055 + Math.random() * 0.0008;
+                drift[offset + 2] = (Math.random() - 0.5) * 0.00035;
 
-                sizes[i] = (isHeldPulse ? 0.9 : 0.72) * ((isBlackKey ? 14 : 13) + Math.random() * 6);
-                alphas[i] = isHeldPulse
+                sizes[particleIndex] = (isHeldPulse ? 0.9 : 0.72) * ((isBlackKey ? 14 : 13) + Math.random() * 6);
+                alphas[particleIndex] = isHeldPulse
                     ? 0.054 + Math.random() * 0.036
                     : 0.05 + Math.random() * 0.045;
-                colors[i * 3] = color.r;
-                colors[i * 3 + 1] = color.g;
-                colors[i * 3 + 2] = color.b;
-                ages[i] = Math.random() * 0.18;
-                phases[i] = Math.random() * Math.PI * 2;
-                swirl[i] = 0.00045 + Math.random() * 0.00065;
+                colors[offset] = color.r;
+                colors[offset + 1] = color.g;
+                colors[offset + 2] = color.b;
+                ages[particleIndex] = Math.random() * 0.18;
+                phases[particleIndex] = Math.random() * Math.PI * 2;
+                swirl[particleIndex] = 0.00045 + Math.random() * 0.00065;
             }
 
-            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-            geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
-            geo.setAttribute('aAlpha', new THREE.BufferAttribute(alphas, 1));
-            geo.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
-
-            const points = new THREE.Points(
-                geo,
-                new THREE.ShaderMaterial({
-                    uniforms: { uTex: { value: mistTex } },
-                    vertexShader: `
-                        attribute float aSize;
-                        attribute float aAlpha;
-                        attribute vec3 aColor;
-                        varying float vAlpha;
-                        varying vec3 vColor;
-
-                        void main() {
-                            vAlpha = aAlpha;
-                            vColor = aColor;
-                            vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
-                            gl_PointSize = aSize * (0.45 + aAlpha * 0.9) * (350.0 / -mvPos.z);
-                            gl_Position = projectionMatrix * mvPos;
-                        }
-                    `,
-                    fragmentShader: `
-                        uniform sampler2D uTex;
-                        varying float vAlpha;
-                        varying vec3 vColor;
-
-                        void main() {
-                            vec4 tex = texture2D(uTex, gl_PointCoord);
-                            gl_FragColor = vec4(vColor * tex.rgb, tex.a * vAlpha);
-                        }
-                    `,
-                    transparent: true,
-                    blending: THREE.AdditiveBlending,
-                    depthWrite: false
-                })
-            );
-
-            points.renderOrder = isBlackKey ? 11 : 8;
-            scene.add(points);
+            batch.points.visible = true;
+            batch.posAttr.needsUpdate = true;
+            batch.sizeAttr.needsUpdate = true;
+            batch.alphaAttr.needsUpdate = true;
+            batch.colorAttr.needsUpdate = true;
 
             activeDeepBlueJets.push({
-                points,
-                geo,
-                pos,
-                vel,
-                drift,
-                alphas,
-                ages,
-                phases,
-                swirl,
-                isHeldPulse,
-                posAttr: geo.attributes.position,
-                alphaAttr: geo.attributes.aAlpha
+                batch,
+                indices,
+                isHeldPulse
             });
         }
 
@@ -2235,19 +2695,21 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             if (!usesLegacyGridEffects()) return;
 
             const count = 8;
-
-            const geo = new THREE.BufferGeometry();
-            const pos = new Float32Array(count * 3);
-            const vel = new Float32Array(count * 3);
-            const sizes = new Float32Array(count);
-            const alphas = new Float32Array(count);
-            const types = new Float32Array(count);
-            const rx = new Float32Array(count);
-            const ry = new Float32Array(count);
-            const rz = new Float32Array(count);
-            const rvx = new Float32Array(count);
-            const rvy = new Float32Array(count);
-            const rvz = new Float32Array(count);
+            const effect = acquireSparkEffect(count);
+            const {
+                points,
+                pos,
+                vel,
+                sizes,
+                alphas,
+                types,
+                rx,
+                ry,
+                rz,
+                rvx,
+                rvy,
+                rvz
+            } = effect;
 
             for (let i = 0; i < count; i++) {
                 pos[i * 3] = point.x;
@@ -2274,125 +2736,30 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
                 rvz[i] = (Math.random() - 0.5) * 0.18;
             }
 
-            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-            geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
-            geo.setAttribute('aAlpha', new THREE.BufferAttribute(alphas, 1));
-            geo.setAttribute('aType', new THREE.BufferAttribute(types, 1));
-            geo.setAttribute('aRotX', new THREE.BufferAttribute(rx, 1));
-            geo.setAttribute('aRotY', new THREE.BufferAttribute(ry, 1));
-            geo.setAttribute('aRotZ', new THREE.BufferAttribute(rz, 1));
-
-            const points = new THREE.Points(
-                geo,
-                new THREE.ShaderMaterial({
-                    uniforms: { uTex: { value: sparkTex } },
-                    vertexShader: `
-                        attribute float aSize;
-                        attribute float aAlpha;
-                        attribute float aType;
-                        attribute float aRotX;
-                        attribute float aRotY;
-                        attribute float aRotZ;
-
-                        varying float vAlpha;
-                        varying float vType;
-                        varying float vRotX;
-                        varying float vRotY;
-                        varying float vRotZ;
-
-                        void main() {
-                            vAlpha = aAlpha;
-                            vType = aType;
-                            vRotX = aRotX;
-                            vRotY = aRotY;
-                            vRotZ = aRotZ;
-
-                            vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
-                            gl_PointSize = aSize * (0.3 + 0.7 * aAlpha) * (350.0 / -mvPos.z);
-                            gl_Position = projectionMatrix * mvPos;
-                        }
-                    `,
-                    fragmentShader: `
-                        uniform sampler2D uTex;
-
-                        varying float vAlpha;
-                        varying float vType;
-                        varying float vRotX;
-                        varying float vRotY;
-                        varying float vRotZ;
-
-                        void main() {
-                            vec2 uv = gl_PointCoord - vec2(0.5);
-
-                            float cY = cos(vRotY);
-                            float cX = cos(vRotX);
-                            float sZ = sin(vRotZ);
-                            float cZ = cos(vRotZ);
-
-                            // Z 軸旋轉
-                            vec2 rotUV = vec2(
-                                uv.x * cZ - uv.y * sZ,
-                                uv.x * sZ + uv.y * cZ
-                            );
-
-                            vec2 rUV = rotUV;
-                            rUV.x /= (abs(cY) < 0.15 ? 0.15 : cY);
-                            rUV.y /= (abs(cX) < 0.15 ? 0.15 : cX);
-
-                            if (abs(rUV.x) > 0.5 || abs(rUV.y) > 0.5) discard;
-
-                            vec2 finalUV = rUV + 0.5;
-                            finalUV.x = (finalUV.x + floor(vType + 0.5)) / 4.0;
-
-                            vec4 texColor = texture2D(uTex, finalUV);
-                            gl_FragColor = vec4(texColor.rgb, texColor.a * vAlpha);
-                        }
-                    `,
-                    transparent: true,
-                    blending: THREE.AdditiveBlending,
-                    depthWrite: false
-                })
-            );
-
             points.renderOrder = 2;
-            scene.add(points);
+            effect.posAttr.needsUpdate = true;
+            effect.sizeAttr.needsUpdate = true;
+            effect.alphaAttr.needsUpdate = true;
+            effect.typeAttr.needsUpdate = true;
+            effect.rotXAttr.needsUpdate = true;
+            effect.rotYAttr.needsUpdate = true;
+            effect.rotZAttr.needsUpdate = true;
 
-            activeSparks.push({
-                points,
-                geo,
-                pos,
-                vel,
-                alphas,
-                rx,
-                ry,
-                rz,
-                rvx,
-                rvy,
-                rvz,
-                posAttr: geo.attributes.position,
-                alphaAttr: geo.attributes.aAlpha,
-                rotXAttr: geo.attributes.aRotX,
-                rotYAttr: geo.attributes.aRotY,
-                rotZAttr: geo.attributes.aRotZ
-            });
+            activeSparks.push(effect);
         }
 
         function spawnMist(point, midi) {
             if (!usesLegacyGridEffects()) return;
 
             const count = 3;
-            const geo = new THREE.BufferGeometry();
-            const pos = new Float32Array(count * 3);
-            const drift = new Float32Array(count * 3);
-            const sizes = new Float32Array(count);
-            const alphas = new Float32Array(count);
-            const colors = new Float32Array(count * 3);
+            const effect = acquireMistEffect(count);
+            const { points, pos, drift, sizes, alphas, colors } = effect;
 
             for (let i = 0; i < count; i++) {
                 const angle = Math.random() * Math.PI * 2;
                 const radius = Math.random() * 0.28;
                 const color = getEffectColor(midi);
-                color.lerp(new THREE.Color(0x6f8cff), 0.22 + Math.random() * 0.16);
+                color.lerp(MIST_TINT_COLOR, 0.22 + Math.random() * 0.16);
 
                 pos[i * 3] = point.x + Math.cos(angle) * radius;
                 pos[i * 3 + 1] = point.y + Math.sin(angle) * radius;
@@ -2409,58 +2776,13 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
                 colors[i * 3 + 2] = color.b;
             }
 
-            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-            geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
-            geo.setAttribute('aAlpha', new THREE.BufferAttribute(alphas, 1));
-            geo.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
-
-            const points = new THREE.Points(
-                geo,
-                new THREE.ShaderMaterial({
-                    uniforms: { uTex: { value: mistTex } },
-                    vertexShader: `
-                        attribute float aSize;
-                        attribute float aAlpha;
-                        attribute vec3 aColor;
-                        varying float vAlpha;
-                        varying vec3 vColor;
-
-                        void main() {
-                            vAlpha = aAlpha;
-                            vColor = aColor;
-                            vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
-                            gl_PointSize = aSize * (350.0 / -mvPos.z);
-                            gl_Position = projectionMatrix * mvPos;
-                        }
-                    `,
-                    fragmentShader: `
-                        uniform sampler2D uTex;
-                        varying float vAlpha;
-                        varying vec3 vColor;
-
-                        void main() {
-                            vec4 tex = texture2D(uTex, gl_PointCoord);
-                            gl_FragColor = vec4(vColor * tex.rgb, tex.a * vAlpha);
-                        }
-                    `,
-                    transparent: true,
-                    blending: THREE.AdditiveBlending,
-                    depthWrite: false
-                })
-            );
-
             points.renderOrder = 1;
-            scene.add(points);
+            effect.posAttr.needsUpdate = true;
+            effect.sizeAttr.needsUpdate = true;
+            effect.alphaAttr.needsUpdate = true;
+            effect.colorAttr.needsUpdate = true;
 
-            activeMists.push({
-                points,
-                geo,
-                pos,
-                drift,
-                alphas,
-                alphaAttr: geo.attributes.aAlpha,
-                posAttr: geo.attributes.position
-            });
+            activeMists.push(effect);
         }
 
         // =========================================================
@@ -2655,9 +2977,7 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
                     s.rotZAttr.needsUpdate = true;
 
                     if (alive === 0) {
-                        scene.remove(s.points);
-                        s.geo.dispose();
-                        s.points.material.dispose();
+                        releaseSparkEffect(s);
                         activeSparks.splice(i, 1);
                     }
                 }
@@ -2683,9 +3003,7 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
                     m.alphaAttr.needsUpdate = true;
 
                     if (alive === 0) {
-                        scene.remove(m.points);
-                        m.geo.dispose();
-                        m.points.material.dispose();
+                        releaseMistEffect(m);
                         activeMists.splice(i, 1);
                     }
                 }
@@ -2694,41 +3012,42 @@ import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
             if (activeDeepBlueJets.length > 0) {
                 for (let i = activeDeepBlueJets.length - 1; i >= 0; i--) {
                     const jet = activeDeepBlueJets[i];
+                    const { batch, indices } = jet;
                     let alive = 0;
 
-                    for (let j = 0; j < jet.alphas.length; j++) {
-                        if (jet.alphas[j] > 0.006) {
-                            jet.ages[j] += 0.06;
+                    for (let j = 0; j < indices.length; j++) {
+                        const particleIndex = indices[j];
+                        if (batch.alphas[particleIndex] > 0.006) {
+                            const offset = particleIndex * 3;
+                            batch.ages[particleIndex] += 0.06;
 
-                            const swirlX = Math.sin(jet.ages[j] * 3.2 + jet.phases[j]) * jet.swirl[j];
-                            const swirlZ = Math.cos(jet.ages[j] * 2.4 + jet.phases[j] * 0.7) * jet.swirl[j] * 0.35;
+                            const swirlX = Math.sin(batch.ages[particleIndex] * 3.2 + batch.phases[particleIndex]) * batch.swirl[particleIndex];
+                            const swirlZ = Math.cos(batch.ages[particleIndex] * 2.4 + batch.phases[particleIndex] * 0.7) * batch.swirl[particleIndex] * 0.35;
                             const pulse = jet.isHeldPulse
-                                ? 0.992 + Math.sin(jet.ages[j] * 1.15 + jet.phases[j]) * 0.012
+                                ? 0.992 + Math.sin(batch.ages[particleIndex] * 1.15 + batch.phases[particleIndex]) * 0.012
                                 : 1;
 
-                            jet.vel[j * 3] += jet.drift[j * 3] + swirlX;
-                            jet.vel[j * 3 + 1] += jet.drift[j * 3 + 1];
-                            jet.vel[j * 3 + 2] += jet.drift[j * 3 + 2] + swirlZ;
+                            batch.vel[offset] += batch.drift[offset] + swirlX;
+                            batch.vel[offset + 1] += batch.drift[offset + 1];
+                            batch.vel[offset + 2] += batch.drift[offset + 2] + swirlZ;
 
-                            jet.pos[j * 3] += jet.vel[j * 3];
-                            jet.pos[j * 3 + 1] += jet.vel[j * 3 + 1];
-                            jet.pos[j * 3 + 2] += jet.vel[j * 3 + 2];
+                            batch.pos[offset] += batch.vel[offset];
+                            batch.pos[offset + 1] += batch.vel[offset + 1];
+                            batch.pos[offset + 2] += batch.vel[offset + 2];
 
-                            jet.vel[j * 3] *= 0.84;
-                            jet.vel[j * 3 + 1] *= 0.94;
-                            jet.vel[j * 3 + 2] *= 0.84;
-                            jet.alphas[j] *= (jet.isHeldPulse ? 0.968 : 0.958) * pulse;
+                            batch.vel[offset] *= 0.84;
+                            batch.vel[offset + 1] *= 0.94;
+                            batch.vel[offset + 2] *= 0.84;
+                            batch.alphas[particleIndex] *= (jet.isHeldPulse ? 0.968 : 0.958) * pulse;
                             alive++;
                         }
                     }
 
-                    jet.posAttr.needsUpdate = true;
-                    jet.alphaAttr.needsUpdate = true;
+                    batch.posAttr.needsUpdate = true;
+                    batch.alphaAttr.needsUpdate = true;
 
                     if (alive === 0) {
-                        scene.remove(jet.points);
-                        jet.geo.dispose();
-                        jet.points.material.dispose();
+                        releaseDeepBlueJetEffect(jet);
                         activeDeepBlueJets.splice(i, 1);
                     }
                 }
