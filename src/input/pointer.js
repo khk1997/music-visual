@@ -16,9 +16,7 @@ export function createPointerInputController({
     isInstrumentLoading,
     getDefaultMidi,
     getRingPoint,
-    onVisualNoteOn,
-    onRecordEvent,
-    onPlayTapMidi
+    onLiveNoteOn
 }) {
     async function handleMouseDown(event) {
         if (!isInteractivePlayback()) return;
@@ -32,16 +30,7 @@ export function createPointerInputController({
 
             const midi = getDefaultMidi();
             const ringPoint = getRingPoint(event.clientX, event.clientY);
-
-            onVisualNoteOn(midi, ringPoint.x, ringPoint.y);
-            onRecordEvent({
-                type: 'note-on',
-                midi,
-                ringX: ringPoint.x,
-                ringY: ringPoint.y,
-                sustained: false
-            });
-            onPlayTapMidi(midi);
+            onLiveNoteOn({ midi, ringX: ringPoint.x, ringY: ringPoint.y, sustained: false });
         } catch (err) {
             console.error('Mouse audio init/play failed:', err);
         }

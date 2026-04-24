@@ -27,20 +27,16 @@ import {
 } from './core/dom.js';
 import {
     BACKGROUND_THEMES,
-    BIG_BEN_SAMPLE_CONFIG,
-    HARP_SAMPLE_CONFIG,
-    INSTRUMENT_VOLUMES,
-    LOW_LATENCY_CONFIG,
     MAJOR_SCALE,
     NATURAL_MINOR_SCALE,
     NOTE_TO_PC,
-    PIANO_RELEASE,
-    PIANO_SAMPLE_CONFIG,
     SCALE_KEY_MAP
 } from './core/config.js';
 import { createPerfMonitor } from './app/perf-monitor.js';
+import { createInstrumentManager } from './audio/instrument-manager.js';
 import { createTransportController } from './audio/transport.js';
 import { createKeyboardInputController } from './input/keyboard.js';
+import { createLiveInputService } from './input/live-input.js';
 import { createPointerInputController } from './input/pointer.js';
 import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
 import { createScreenManager } from './ui/screen-manager.js';
@@ -49,457 +45,42 @@ import { createThemePanelController } from './ui/theme-panel.js';
 // =========================================================
 // 1. 音源設定
 // =========================================================
-        let instrument = null;
-        let playbackInstrument = null;
-        let reverb = null;
-        let limiter = null;
-        let audioStarted = false;
-        let currentSound = 'synth';
-        let isInstrumentLoading = false;
-        let instrumentSwitchToken = 0;
-        let lofiVibrato = null;
-        let lofiFilter = null;
-        const activePianoKeyStates = new Map();
-        let playbackLofiVibrato = null;
-        let playbackLofiFilter = null;
         const liveKeyHighlights = new Map();
         const playbackKeyHighlights = new Map();
         const PIANO_TAP_DURATION = 0.12;
         let backgroundVisualsReady = false;
         let isRecording = false;
-        let uiClickSynth = null;
         let screenManager = null;
         let themePanelController = null;
         let transportController = null;
+        let liveInputController = null;
         let keyboardInputController = null;
         let pointerInputController = null;
-
-        function getToneContext() {
-            if (typeof Tone.getContext === 'function') return Tone.getContext();
-            return Tone.context;
-        }
-
-        function applyLowLatencyMode() {
-            const toneContext = getToneContext();
-            if (toneContext) {
-                toneContext.lookAhead = LOW_LATENCY_CONFIG.lookAhead;
-                toneContext.updateInterval = LOW_LATENCY_CONFIG.updateInterval;
-            }
-        }
-
-        function getTriggerTime() {
-            if (typeof Tone.immediate === 'function') {
-                return Tone.immediate();
-            }
-            return Tone.now();
-        }
-
-        function supportsHeldNotes(soundType) {
-            return soundType === 'piano'
-                || soundType === 'chiptune_lead'
-                || soundType === 'saw_lead';
-        }
-
-        function ensureUiClickSynth() {
-            if (uiClickSynth) return uiClickSynth;
-
-            uiClickSynth = new Tone.Synth({
-                oscillator: {
-                    type: 'triangle'
-                },
-                envelope: {
-                    attack: 0.002,
-                    decay: 0.07,
-                    sustain: 0,
-                    release: 0.08
-                }
-            }).connect(limiter);
-
-            uiClickSynth.volume.value = -14;
-            return uiClickSynth;
-        }
-
-        async function playModeCardClickSound() {
-            try {
-                if (!audioStarted) {
-                    await initAudio();
-                }
-
-                const clickSynth = ensureUiClickSynth();
-                const triggerTime = getTriggerTime();
-                clickSynth.triggerAttackRelease('E5', 0.09, triggerTime);
-                clickSynth.triggerAttackRelease('B5', 0.07, triggerTime + 0.045);
-            } catch (err) {
-                console.error('Mode card click sound failed:', err);
-            }
-        }
-
-        async function playBackHomeClickSound() {
-            try {
-                if (!audioStarted) {
-                    await initAudio();
-                }
-
-                const clickSynth = ensureUiClickSynth();
-                const triggerTime = getTriggerTime();
-                clickSynth.triggerAttackRelease('D6', 0.045, triggerTime, 0.7);
-                clickSynth.triggerAttackRelease('A5', 0.055, triggerTime + 0.032, 0.62);
-                clickSynth.triggerAttackRelease('E5', 0.1, triggerTime + 0.078, 0.82);
-            } catch (err) {
-                console.error('Back home click sound failed:', err);
-            }
-        }
-
-        function applyInstrumentVolumeTo(targetInstrument, type) {
-            if (!targetInstrument || !targetInstrument.volume) return;
-            targetInstrument.volume.value = INSTRUMENT_VOLUMES[type] ?? 0;
-        }
-
-        function disposeLofiChain(vibratoRef, filterRef) {
-            if (vibratoRef && typeof vibratoRef.dispose === 'function') {
-                vibratoRef.dispose();
-            }
-            if (filterRef && typeof filterRef.dispose === 'function') {
-                filterRef.dispose();
-            }
-        }
-
-        function disposeCurrentInstrument() {
-            disposeLofiChain(lofiVibrato, lofiFilter);
-            if (instrument && typeof instrument.dispose === 'function') {
-                instrument.dispose();
-            }
-            instrument = null;
-            lofiVibrato = null;
-            lofiFilter = null;
-            activePianoKeyStates.clear();
-        }
-
-        function disposePlaybackInstrument() {
-            disposeLofiChain(playbackLofiVibrato, playbackLofiFilter);
-            if (playbackInstrument && typeof playbackInstrument.dispose === 'function') {
-                playbackInstrument.dispose();
-            }
-            playbackInstrument = null;
-            playbackLofiVibrato = null;
-            playbackLofiFilter = null;
-        }
-
-        function setInstrumentLoadingState(loading) {
-            isInstrumentLoading = loading;
-            soundSelect.disabled = loading;
-        }
+        const {
+            bindSoundSelect,
+            createInstrumentInstance,
+            createPlaybackInstrument,
+            disposeLofiChain,
+            getCurrentSound,
+            getInstrument,
+            getIsInstrumentLoading,
+            getPlaybackInstrument,
+            getTriggerTime,
+            initAudio,
+            playBackHomeClickSound,
+            playMidi,
+            playMidiWithInstrument,
+            playModeCardClickSound,
+            supportsHeldNotes,
+            switchInstrument
+        } = createInstrumentManager({
+            soundSelect,
+            onStopLiveInput: () => liveInputController?.stopAll()
+        });
+        bindSoundSelect();
 
         function stopLiveInputPlayback() {
-            if (instrument && typeof instrument.releaseAll === 'function') {
-                instrument.releaseAll(getTriggerTime());
-            }
-
-            for (const state of activePianoKeyStates.values()) {
-                if (state.instrumentRef && typeof state.instrumentRef.releaseAll === 'function') {
-                    state.instrumentRef.releaseAll(getTriggerTime());
-                }
-            }
-
-            activePianoKeyStates.clear();
-            keyboardInputController?.stopActiveVisualKeys();
-        }
-
-        function swapCurrentInstrument(created, type) {
-            const previousInstrument = instrument;
-            const previousLofiVibrato = lofiVibrato;
-            const previousLofiFilter = lofiFilter;
-
-            instrument = created.instrument;
-            lofiVibrato = created.lofiVibrato;
-            lofiFilter = created.lofiFilter;
-            currentSound = type;
-
-            disposeLofiChain(previousLofiVibrato, previousLofiFilter);
-            if (previousInstrument && typeof previousInstrument.dispose === 'function') {
-                previousInstrument.dispose();
-            }
-            activePianoKeyStates.clear();
-        }
-
-        async function createInstrumentInstance(type) {
-            let nextInstrument = null;
-            let nextLofiVibrato = null;
-            let nextLofiFilter = null;
-
-            if (type === 'piano') {
-                nextInstrument = new Tone.Sampler({
-                    urls: PIANO_SAMPLE_CONFIG.urls,
-                    baseUrl: PIANO_SAMPLE_CONFIG.baseUrl,
-                    release: PIANO_RELEASE
-                }).connect(reverb);
-
-                await Tone.loaded();
-            }
-            else if (type === 'harp') {
-                nextInstrument = new Tone.Sampler({
-                    urls: HARP_SAMPLE_CONFIG.urls,
-                    baseUrl: HARP_SAMPLE_CONFIG.baseUrl
-                }).connect(reverb);
-
-                await Tone.loaded();
-            }
-            else if (type === 'big_ben') {
-                nextInstrument = new Tone.Sampler({
-                    urls: BIG_BEN_SAMPLE_CONFIG.urls,
-                    baseUrl: BIG_BEN_SAMPLE_CONFIG.baseUrl,
-                    release: 4.0
-                });
-
-                if (nextInstrument.detune) {
-                    nextInstrument.detune.value = 400;
-                }
-
-                nextLofiFilter = new Tone.Compressor({
-                    threshold: -22,
-                    ratio: 10,
-                    attack: 0.003,
-                    release: 0.28
-                });
-
-                nextInstrument.chain(nextLofiFilter, limiter);
-
-                await Tone.loaded();
-            }
-            else if (type === 'synth') {
-                nextInstrument = new Tone.PolySynth(Tone.Synth, {
-                    oscillator: { type: "triangle" },
-                    envelope: {
-                        attack: 0.005,
-                        decay: 0.1,
-                        sustain: 0.3,
-                        release: 1.2
-                    }
-                }).connect(reverb);
-            }
-            else if (type === 'bell') {
-                nextInstrument = new Tone.PolySynth(Tone.FMSynth, {
-                    harmonicity: 8,
-                    modulationIndex: 12,
-                    envelope: {
-                        attack: 0.001,
-                        decay: 1.2,
-                        sustain: 0,
-                        release: 1.5
-                    },
-                    modulation: {
-                        type: "sine"
-                    },
-                    modulationEnvelope: {
-                        attack: 0.002,
-                        decay: 0.3,
-                        sustain: 0,
-                        release: 0.8
-                    }
-                }).connect(reverb);
-            }
-            else if (type === 'pluck') {
-                nextInstrument = new Tone.PolySynth(Tone.Synth, {
-                    oscillator: { type: "triangle" },
-                    envelope: {
-                        attack: 0.001,
-                        decay: 0.16,
-                        sustain: 0.0,
-                        release: 0.1
-                    }
-                }).connect(reverb);
-            }
-            else if (type === 'chiptune_lead') {
-                nextInstrument = new Tone.PolySynth(Tone.Synth, {
-                    oscillator: { type: "square" },
-                    envelope: {
-                        attack: 0.002,
-                        decay: 0.08,
-                        sustain: 0.45,
-                        release: 0.12
-                    }
-                }).connect(reverb);
-            }
-            else if (type === 'saw_lead') {
-                nextInstrument = new Tone.PolySynth(Tone.Synth, {
-                    oscillator: { type: "sawtooth" },
-                    envelope: {
-                        attack: 0.01,
-                        decay: 0.22,
-                        sustain: 0.14,
-                        release: 0.16
-                    }
-                }).connect(reverb);
-            }
-            else if (type === 'lofi_ep') {
-                nextInstrument = new Tone.PolySynth(Tone.FMSynth, {
-                    harmonicity: 1.5,
-                    modulationIndex: 3.5,
-                    detune: 0,
-                    oscillator: { type: "triangle" },
-                    envelope: {
-                        attack: 0.015,
-                        decay: 0.35,
-                        sustain: 0.28,
-                        release: 1.1
-                    },
-                    modulation: { type: "sine" },
-                    modulationEnvelope: {
-                        attack: 0.02,
-                        decay: 0.2,
-                        sustain: 0.0,
-                        release: 0.6
-                    }
-                });
-
-                nextLofiVibrato = new Tone.Vibrato({
-                    frequency: 4.2,
-                    depth: 0.08,
-                    type: "sine"
-                });
-                nextLofiFilter = new Tone.Filter({
-                    type: "lowpass",
-                    frequency: 3600,
-                    rolloff: -24,
-                    Q: 0.8
-                });
-
-                nextInstrument.chain(nextLofiVibrato, nextLofiFilter, reverb);
-            }
-
-            applyInstrumentVolumeTo(nextInstrument, type);
-            return {
-                instrument: nextInstrument,
-                lofiVibrato: nextLofiVibrato,
-                lofiFilter: nextLofiFilter
-            };
-        }
-
-        async function createPianoInstrument() {
-            const created = await createInstrumentInstance('piano');
-            swapCurrentInstrument(created, 'piano');
-        }
-
-        async function createHarpInstrument() {
-            const created = await createInstrumentInstance('harp');
-            swapCurrentInstrument(created, 'harp');
-        }
-
-        async function createPlaybackInstrument(type) {
-            disposePlaybackInstrument();
-
-            const created = await createInstrumentInstance(type);
-            playbackInstrument = created.instrument;
-            playbackLofiVibrato = created.lofiVibrato;
-            playbackLofiFilter = created.lofiFilter;
-        }
-
-        async function createInstrument(type) {
-            if (type === 'piano') {
-                await createPianoInstrument();
-            }
-            else if (type === 'harp') {
-                await createHarpInstrument();
-            }
-            else {
-                const created = await createInstrumentInstance(type);
-                swapCurrentInstrument(created, type);
-            }
-        }
-
-        async function initAudio() {
-            if (audioStarted) return;
-
-            await Tone.start();
-            applyLowLatencyMode();
-
-            limiter = new Tone.Limiter(-1).toDestination();
-            reverb = new Tone.Reverb({
-                decay: 2.5,
-                wet: 0.3
-            }).connect(limiter);
-
-            await createInstrument(currentSound);
-            audioStarted = true;
-        }
-
-        soundSelect.addEventListener('change', async () => {
-            const selectedSound = soundSelect.value;
-
-            if (!audioStarted) return;
-
-            const switchToken = ++instrumentSwitchToken;
-            stopLiveInputPlayback();
-            setInstrumentLoadingState(true);
-
-            try {
-                await createInstrument(selectedSound);
-            } catch (err) {
-                console.error('Failed to switch instrument:', err);
-                soundSelect.value = currentSound;
-            } finally {
-                if (switchToken === instrumentSwitchToken) {
-                    setInstrumentLoadingState(false);
-                }
-            }
-        });
-
-        function playMidiWithInstrument(targetInstrument, soundType, midi) {
-            if (!targetInstrument || isInstrumentLoading) return;
-            const note = Tone.Frequency(midi, "midi").toNote();
-            const triggerTime = getTriggerTime();
-
-            if (soundType === 'piano') {
-                targetInstrument.triggerAttackRelease(note, 1.4, triggerTime);
-            } else if (soundType === 'big_ben') {
-                targetInstrument.triggerAttackRelease(note, 3.5, triggerTime);
-            } else if (soundType === 'harp') {
-                targetInstrument.triggerAttackRelease(note, 2.0, triggerTime);
-            } else if (soundType === 'bell') {
-                targetInstrument.triggerAttackRelease(note, "2n", triggerTime);
-            } else if (soundType === 'pluck') {
-                targetInstrument.triggerAttackRelease(note, "16n", triggerTime);
-            } else if (soundType === 'chiptune_lead') {
-                targetInstrument.triggerAttackRelease(note, "16n", triggerTime);
-            } else if (soundType === 'saw_lead') {
-                targetInstrument.triggerAttackRelease(note, "8n", triggerTime);
-            } else if (soundType === 'lofi_ep') {
-                targetInstrument.triggerAttackRelease(note, "4n", triggerTime);
-            } else {
-                targetInstrument.triggerAttackRelease(note, "8n", triggerTime);
-            }
-        }
-
-        function playMidi(midi) {
-            playMidiWithInstrument(instrument, currentSound, midi);
-        }
-
-        function playPianoKeyDown(key, midi) {
-            if (!instrument || isInstrumentLoading || !supportsHeldNotes(currentSound) || activePianoKeyStates.has(key)) return;
-
-            const note = Tone.Frequency(midi, "midi").toNote();
-            const startTime = getTriggerTime();
-
-            instrument.triggerAttack(note, startTime);
-            activePianoKeyStates.set(key, { note, startTime, midi, instrumentRef: instrument });
-        }
-
-        function releasePianoKey(key) {
-            const state = activePianoKeyStates.get(key);
-            if (!state) return;
-            if (!state.instrumentRef) {
-                activePianoKeyStates.delete(key);
-                return;
-            }
-
-            const now = getTriggerTime();
-            const heldFor = now - state.startTime;
-            const releaseTime = heldFor < PIANO_TAP_DURATION
-                ? now + (PIANO_TAP_DURATION - heldFor)
-                : now;
-
-            state.instrumentRef.triggerRelease(state.note, releaseTime);
-            activePianoKeyStates.delete(key);
+            liveInputController?.stopAll();
         }
 
         // =========================================================
@@ -783,9 +364,9 @@ import { createThemePanelController } from './ui/theme-panel.js';
                 scene.background = new THREE.Color(theme.color);
                 renderer.toneMappingExposure = theme.exposure;
 
-                if (theme.id === 'deep-blue' && currentSound !== 'piano') {
+                if (theme.id === 'deep-blue' && getCurrentSound() !== 'piano') {
                     soundSelect.value = 'piano';
-                    void createInstrument('piano');
+                    void switchInstrument('piano');
                 }
 
                 if (backgroundVisualsReady) {
@@ -822,8 +403,8 @@ import { createThemePanelController } from './ui/theme-panel.js';
 
         transportController = createTransportController({
             createPlaybackInstrument,
-            getCurrentSound: () => currentSound,
-            getPlaybackInstrument: () => playbackInstrument,
+            getCurrentSound,
+            getPlaybackInstrument,
             getTriggerTime,
             highlightKey,
             initAudio,
@@ -866,28 +447,35 @@ import { createThemePanelController } from './ui/theme-panel.js';
             updateTransportButtons
         });
 
+        liveInputController = createLiveInputService({
+            getCurrentSound,
+            getInstrument,
+            getIsInstrumentLoading,
+            getTriggerTime,
+            onPlayTapMidi: playMidi,
+            onRecordEvent: recordPerformanceEvent,
+            onStopVisualNotes: () => keyboardInputController?.stopActiveVisualKeys(),
+            onVisualNoteOff: (midi) => {
+                highlightKey('user', midi, false);
+                triggerDeepBlueNoteOff('user', midi);
+            },
+            onVisualNoteOn: (midi, x, y, sustained) => {
+                playVisualFeedback('user', midi, x, y);
+                triggerDeepBlueNoteOn('user', midi, sustained);
+            },
+            supportsHeldNotes,
+            tapDuration: PIANO_TAP_DURATION
+        });
+
         keyboardInputController = createKeyboardInputController({
             getCurrentScreen: () => screenManager?.getCurrentScreen() ?? 'home',
             isInteractivePlayback,
             getMidiFromScaleKey,
             initAudio,
-            isInstrumentLoading: () => isInstrumentLoading,
-            getCurrentSound: () => currentSound,
-            supportsHeldNotes,
+            isInstrumentLoading: getIsInstrumentLoading,
             onHomeEnter: () => transitionFromHome(freePlayCard, 'free-play'),
-            onPlayHeldMidi: playPianoKeyDown,
-            onPlayTapMidi: playMidi,
-            onReleaseHeldKey: releasePianoKey,
-            hasHeldKeyState: (key) => activePianoKeyStates.has(key),
-            onVisualNoteOn: (midi, x, y, sustained) => {
-                playVisualFeedback('user', midi, x, y);
-                triggerDeepBlueNoteOn('user', midi, sustained);
-            },
-            onVisualNoteOff: (midi) => {
-                highlightKey('user', midi, false);
-                triggerDeepBlueNoteOff('user', midi);
-            },
-            onRecordEvent: recordPerformanceEvent,
+            onLiveNoteOff: (payload) => liveInputController?.triggerNoteOff(payload),
+            onLiveNoteOn: (payload) => liveInputController?.triggerNoteOn(payload),
             onStopAllLiveInput: stopLiveInputPlayback
         });
         keyboardInputController.bind();
@@ -896,15 +484,10 @@ import { createThemePanelController } from './ui/theme-panel.js';
             isInteractivePlayback,
             getExcludedElements: () => [bottomUi, topBar],
             initAudio,
-            isInstrumentLoading: () => isInstrumentLoading,
+            isInstrumentLoading: getIsInstrumentLoading,
             getDefaultMidi: () => getMidiFromScaleKey('a', false, false) ?? 60,
             getRingPoint: (clientX, clientY) => getScreenPointOnPlane(clientX, clientY, RING_PLANE_Z),
-            onVisualNoteOn: (midi, x, y) => {
-                playVisualFeedback('user', midi, x, y);
-                triggerDeepBlueNoteOn('user', midi, false);
-            },
-            onRecordEvent: recordPerformanceEvent,
-            onPlayTapMidi: playMidi
+            onLiveNoteOn: (payload) => liveInputController?.triggerNoteOn(payload)
         });
         pointerInputController.bind();
 

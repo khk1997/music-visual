@@ -19,24 +19,16 @@ export function createKeyboardInputController({
     getMidiFromScaleKey,
     initAudio,
     isInstrumentLoading,
-    getCurrentSound,
-    supportsHeldNotes,
     onHomeEnter,
-    onPlayHeldMidi,
-    onPlayTapMidi,
-    onReleaseHeldKey,
-    hasHeldKeyState,
-    onVisualNoteOn,
-    onVisualNoteOff,
-    onRecordEvent,
+    onLiveNoteOff,
+    onLiveNoteOn,
     onStopAllLiveInput
 }) {
     const activeVisualKeyStates = new Map();
 
     function stopActiveVisualKeys() {
         for (const [key, visualState] of Array.from(activeVisualKeyStates.entries())) {
-            onRecordEvent({ type: 'note-off', midi: visualState.midi });
-            onVisualNoteOff(visualState.midi);
+            onLiveNoteOff({ key, midi: visualState.midi });
             activeVisualKeyStates.delete(key);
         }
     }
@@ -62,16 +54,8 @@ export function createKeyboardInputController({
             if (isInstrumentLoading()) return;
 
             const { x, y } = getKeyVisualPosition(key);
-            const sustained = true;
-            onVisualNoteOn(midi, x, y, sustained);
-            onRecordEvent({ type: 'note-on', midi, ringX: x, ringY: y, sustained });
             activeVisualKeyStates.set(key, { midi });
-
-            if (supportsHeldNotes(getCurrentSound())) {
-                onPlayHeldMidi(key, midi);
-            } else {
-                onPlayTapMidi(midi);
-            }
+            onLiveNoteOn({ key, midi, ringX: x, ringY: y, sustained: true });
         } catch (err) {
             console.error('Audio init/play failed:', err);
         }
@@ -84,13 +68,8 @@ export function createKeyboardInputController({
         const visualState = activeVisualKeyStates.get(key);
 
         if (visualState) {
-            onRecordEvent({ type: 'note-off', midi: visualState.midi });
-            onVisualNoteOff(visualState.midi);
+            onLiveNoteOff({ key, midi: visualState.midi });
             activeVisualKeyStates.delete(key);
-        }
-
-        if (supportsHeldNotes(getCurrentSound()) && hasHeldKeyState(key)) {
-            onReleaseHeldKey(key);
         }
     }
 
