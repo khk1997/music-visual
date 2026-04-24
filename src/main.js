@@ -18,6 +18,7 @@ import {
     playbackToggleButton,
     recordToggleButton,
     soundSelect,
+    topBar,
     themeList,
     themePanel,
     themePreviewDescription,
@@ -38,6 +39,9 @@ import {
     SCALE_KEY_MAP
 } from './core/config.js';
 import { createPerfMonitor } from './app/perf-monitor.js';
+import { createTransportController } from './audio/transport.js';
+import { createKeyboardInputController } from './input/keyboard.js';
+import { createPointerInputController } from './input/pointer.js';
 import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
 import { createScreenManager } from './ui/screen-manager.js';
 import { createThemePanelController } from './ui/theme-panel.js';
@@ -53,11 +57,9 @@ import { createThemePanelController } from './ui/theme-panel.js';
         let currentSound = 'synth';
         let isInstrumentLoading = false;
         let instrumentSwitchToken = 0;
-        let recordedSoundType = 'synth';
         let lofiVibrato = null;
         let lofiFilter = null;
         const activePianoKeyStates = new Map();
-        const activeVisualKeyStates = new Map();
         let playbackLofiVibrato = null;
         let playbackLofiFilter = null;
         const liveKeyHighlights = new Map();
@@ -65,16 +67,12 @@ import { createThemePanelController } from './ui/theme-panel.js';
         const PIANO_TAP_DURATION = 0.12;
         let backgroundVisualsReady = false;
         let isRecording = false;
-        let recordingStartTime = 0;
-        let recordedEvents = [];
-        let isPlaybackActive = false;
-        let playbackEndTimer = null;
-        const playbackTimers = [];
-        const playbackPianoNotes = new Map();
-        let playbackLoopDuration = 0;
         let uiClickSynth = null;
         let screenManager = null;
         let themePanelController = null;
+        let transportController = null;
+        let keyboardInputController = null;
+        let pointerInputController = null;
 
         function getToneContext() {
             if (typeof Tone.getContext === 'function') return Tone.getContext();
@@ -185,7 +183,6 @@ import { createThemePanelController } from './ui/theme-panel.js';
             playbackInstrument = null;
             playbackLofiVibrato = null;
             playbackLofiFilter = null;
-            playbackPianoNotes.clear();
         }
 
         function setInstrumentLoadingState(loading) {
@@ -205,13 +202,7 @@ import { createThemePanelController } from './ui/theme-panel.js';
             }
 
             activePianoKeyStates.clear();
-
-            for (const [key, visualState] of Array.from(activeVisualKeyStates.entries())) {
-                recordPerformanceEvent({ type: 'note-off', midi: visualState.midi });
-                highlightKey('user', visualState.midi, false);
-                triggerDeepBlueNoteOff('user', visualState.midi);
-                activeVisualKeyStates.delete(key);
-            }
+            keyboardInputController?.stopActiveVisualKeys();
         }
 
         function swapCurrentInstrument(created, type) {
@@ -643,6 +634,8 @@ import { createThemePanelController } from './ui/theme-panel.js';
             recordToggleButton.textContent = isRecording ? 'Stop Rec' : 'Record';
             recordToggleButton.classList.toggle('is-active', isRecording);
 
+            const isPlaybackActive = transportController?.getIsPlaybackActive() ?? false;
+            const recordedEvents = transportController?.getRecordedEvents() ?? [];
             playbackToggleButton.textContent = isPlaybackActive ? 'Stop Loop' : 'Playback';
             playbackToggleButton.classList.toggle('is-active', isPlaybackActive);
 
@@ -652,78 +645,19 @@ import { createThemePanelController } from './ui/theme-panel.js';
         }
 
         function stopPlayback() {
-            for (const timer of playbackTimers) {
-                clearTimeout(timer);
-            }
-            playbackTimers.length = 0;
-
-            if (playbackEndTimer !== null) {
-                clearTimeout(playbackEndTimer);
-                playbackEndTimer = null;
-            }
-
-            for (const midi of Array.from(playbackPianoNotes.keys())) {
-                releasePlaybackPianoMidi(midi);
-            }
-
-            for (const barKey of Array.from(liveDeepBlueBars.keys())) {
-                if (barKey.startsWith('playback:')) {
-                    const midi = Number(barKey.split(':')[1]);
-                    triggerDeepBlueNoteOff('playback', midi);
-                }
-            }
-
-            clearHighlightMap(playbackKeyHighlights);
-            isPlaybackActive = false;
-            updateTransportButtons();
+            transportController?.stopPlayback();
         }
 
         function stopRecording() {
-            isRecording = false;
-            updateTransportButtons();
+            transportController?.stopRecording();
         }
 
         function startRecording() {
-            stopPlayback();
-            recordedEvents = [];
-            recordedSoundType = currentSound;
-            recordingStartTime = nowSeconds();
-            isRecording = true;
-            updateTransportButtons();
+            transportController?.startRecording();
         }
 
         function recordPerformanceEvent(event) {
-            if (!isRecording) return;
-
-            recordedEvents.push({
-                ...event,
-                time: nowSeconds() - recordingStartTime
-            });
-        }
-
-        function attackPlaybackPianoMidi(midi) {
-            if (!playbackInstrument || !supportsHeldNotes(recordedSoundType) || playbackPianoNotes.has(midi)) return;
-
-            const note = Tone.Frequency(midi, "midi").toNote();
-            const startTime = getTriggerTime();
-            playbackInstrument.triggerAttack(note, startTime);
-            playbackPianoNotes.set(midi, { note, startTime });
-        }
-
-        function releasePlaybackPianoMidi(midi) {
-            if (!playbackInstrument) return;
-
-            const state = playbackPianoNotes.get(midi);
-            if (!state) return;
-
-            const now = getTriggerTime();
-            const heldFor = now - state.startTime;
-            const releaseTime = heldFor < PIANO_TAP_DURATION
-                ? now + (PIANO_TAP_DURATION - heldFor)
-                : now;
-
-            playbackInstrument.triggerRelease(state.note, releaseTime);
-            playbackPianoNotes.delete(midi);
+            transportController?.recordPerformanceEvent(event);
         }
 
         function playVisualFeedback(source, midi, ringX, ringY) {
@@ -747,60 +681,8 @@ import { createThemePanelController } from './ui/theme-panel.js';
             playVisualFeedback
         });
 
-        function schedulePlaybackLoopPass() {
-            if (!isPlaybackActive) return;
-
-            for (const event of recordedEvents) {
-                const timer = setTimeout(() => {
-                    if (!isPlaybackActive) return;
-
-                    if (event.type === 'note-on') {
-                        playVisualFeedback('playback', event.midi, event.ringX, event.ringY);
-                        triggerDeepBlueNoteOn('playback', event.midi, !!event.sustained);
-
-                        if (supportsHeldNotes(recordedSoundType) && event.sustained) {
-                            attackPlaybackPianoMidi(event.midi);
-                        } else {
-                            playMidiWithInstrument(playbackInstrument, recordedSoundType, event.midi);
-                        }
-                    } else if (event.type === 'note-off') {
-                        highlightKey('playback', event.midi, false);
-                        triggerDeepBlueNoteOff('playback', event.midi);
-                        if (supportsHeldNotes(recordedSoundType)) {
-                            releasePlaybackPianoMidi(event.midi);
-                        }
-                    }
-                }, Math.max(0, event.time * 1000));
-
-                playbackTimers.push(timer);
-            }
-
-            playbackEndTimer = setTimeout(() => {
-                for (const midi of Array.from(playbackPianoNotes.keys())) {
-                    releasePlaybackPianoMidi(midi);
-                }
-
-                schedulePlaybackLoopPass();
-            }, playbackLoopDuration * 1000);
-        }
-
         async function startPlayback() {
-            if (recordedEvents.length === 0 || isRecording) return;
-
-            stopPlayback();
-
-            try {
-                await initAudio();
-                await createPlaybackInstrument(recordedSoundType);
-            } catch (err) {
-                console.error('Playback audio init failed:', err);
-                return;
-            }
-
-            isPlaybackActive = true;
-            updateTransportButtons();
-            playbackLoopDuration = recordedEvents.reduce((maxTime, event) => Math.max(maxTime, event.time), 0) + 0.25;
-            schedulePlaybackLoopPass();
+            await transportController?.startPlayback();
         }
 
         recordToggleButton.addEventListener('click', () => {
@@ -809,7 +691,7 @@ import { createThemePanelController } from './ui/theme-panel.js';
         });
 
         playbackToggleButton.addEventListener('click', async () => {
-            if (isPlaybackActive) {
+            if (transportController?.getIsPlaybackActive()) {
                 stopPlayback();
                 return;
             }
@@ -930,13 +812,101 @@ import { createThemePanelController } from './ui/theme-panel.js';
             playbackToggleButton,
             recordToggleButton,
             themeUi: themePanelController,
-            getIsPlaybackActive: () => isPlaybackActive,
+            getIsPlaybackActive: () => transportController?.getIsPlaybackActive() ?? false,
             getIsRecording: () => isRecording,
             onPlayBackHomeClickSound: playBackHomeClickSound,
             onPlayModeCardClickSound: playModeCardClickSound,
             stopPlayback,
             stopRecording
         });
+
+        transportController = createTransportController({
+            createPlaybackInstrument,
+            getCurrentSound: () => currentSound,
+            getPlaybackInstrument: () => playbackInstrument,
+            getTriggerTime,
+            highlightKey,
+            initAudio,
+            isRecordingActive: () => isRecording,
+            nowSeconds,
+            onPlaybackStateChange: (active) => {
+                if (!active) {
+                    for (const barKey of Array.from(liveDeepBlueBars.keys())) {
+                        if (barKey.startsWith('playback:')) {
+                            const midi = Number(barKey.split(':')[1]);
+                            triggerDeepBlueNoteOff('playback', midi);
+                        }
+                    }
+                    clearHighlightMap(playbackKeyHighlights);
+                }
+            },
+            onRecordingStateChange: (active) => {
+                isRecording = active;
+            },
+            playMidiWithInstrument,
+            playVisualFeedback,
+            releasePlaybackVisuals: (midi) => {
+                if (typeof midi === 'number') {
+                    triggerDeepBlueNoteOff('playback', midi);
+                    return;
+                }
+
+                for (const barKey of Array.from(liveDeepBlueBars.keys())) {
+                    if (barKey.startsWith('playback:')) {
+                        const playbackMidi = Number(barKey.split(':')[1]);
+                        triggerDeepBlueNoteOff('playback', playbackMidi);
+                    }
+                }
+            },
+            supportsHeldNotes,
+            tapDuration: PIANO_TAP_DURATION,
+            triggerPlaybackNoteOn: (midi, sustained) => {
+                triggerDeepBlueNoteOn('playback', midi, sustained);
+            },
+            updateTransportButtons
+        });
+
+        keyboardInputController = createKeyboardInputController({
+            getCurrentScreen: () => screenManager?.getCurrentScreen() ?? 'home',
+            isInteractivePlayback,
+            getMidiFromScaleKey,
+            initAudio,
+            isInstrumentLoading: () => isInstrumentLoading,
+            getCurrentSound: () => currentSound,
+            supportsHeldNotes,
+            onHomeEnter: () => transitionFromHome(freePlayCard, 'free-play'),
+            onPlayHeldMidi: playPianoKeyDown,
+            onPlayTapMidi: playMidi,
+            onReleaseHeldKey: releasePianoKey,
+            hasHeldKeyState: (key) => activePianoKeyStates.has(key),
+            onVisualNoteOn: (midi, x, y, sustained) => {
+                playVisualFeedback('user', midi, x, y);
+                triggerDeepBlueNoteOn('user', midi, sustained);
+            },
+            onVisualNoteOff: (midi) => {
+                highlightKey('user', midi, false);
+                triggerDeepBlueNoteOff('user', midi);
+            },
+            onRecordEvent: recordPerformanceEvent,
+            onStopAllLiveInput: stopLiveInputPlayback
+        });
+        keyboardInputController.bind();
+
+        pointerInputController = createPointerInputController({
+            isInteractivePlayback,
+            getExcludedElements: () => [bottomUi, topBar],
+            initAudio,
+            isInstrumentLoading: () => isInstrumentLoading,
+            getDefaultMidi: () => getMidiFromScaleKey('a', false, false) ?? 60,
+            getRingPoint: (clientX, clientY) => getScreenPointOnPlane(clientX, clientY, RING_PLANE_Z),
+            onVisualNoteOn: (midi, x, y) => {
+                playVisualFeedback('user', midi, x, y);
+                triggerDeepBlueNoteOn('user', midi, false);
+            },
+            onRecordEvent: recordPerformanceEvent,
+            onPlayTapMidi: playMidi
+        });
+        pointerInputController.bind();
 
         function getCurrentBackgroundTheme() {
             return themePanelController.getCurrentBackgroundTheme();
@@ -2019,8 +1989,8 @@ import { createThemePanelController } from './ui/theme-panel.js';
                 activeSparks: activeSparks.length,
                 activeMists: activeMists.length,
                 activeJets: activeDeepBlueJets.length,
-                recordedEvents: recordedEvents.length,
-                isPlaybackActive
+                recordedEvents: transportController?.getRecordedEvents().length ?? 0,
+                isPlaybackActive: transportController?.getIsPlaybackActive() ?? false
             })
         });
 
@@ -2454,22 +2424,6 @@ import { createThemePanelController } from './ui/theme-panel.js';
             activeMists.push(effect);
         }
 
-        // =========================================================
-        // 9. 鍵盤座標對應
-        // =========================================================
-        function getKeyVisualPosition(key) {
-            const row = "qwertyuiop".includes(key)
-                ? "qwertyuiop"
-                : "asdfghjkl".includes(key)
-                    ? "asdfghjkl"
-                    : "zxcvbnm";
-
-            const x = (row.indexOf(key) / (row.length - 1)) * 12 - 6;
-            const y = row === "qwertyuiop" ? 2.5 : row === "zxcvbnm" ? -2.5 : 0;
-
-            return { x, y };
-        }
-
         function getScreenPointOnPlane(clientX, clientY, targetZ) {
             const mouse = new THREE.Vector2(
                 (clientX / window.innerWidth) * 2 - 1,
@@ -2490,112 +2444,6 @@ import { createThemePanelController } from './ui/theme-panel.js';
             const scale = (targetZ - camera.position.z) / direction.z;
             return camera.position.clone().add(direction.multiplyScalar(scale));
         }
-
-        // =========================================================
-        // 10. 鍵盤互動
-        // =========================================================
-        window.addEventListener('keydown', async (e) => {
-            if (!isInteractivePlayback()) {
-                if (screenManager?.getCurrentScreen() === 'home' && e.key === 'Enter') {
-                    transitionFromHome(freePlayCard, 'free-play');
-                }
-                return;
-            }
-
-            const key = e.key.toLowerCase();
-            const midi = getMidiFromScaleKey(key, e.shiftKey, e.ctrlKey);
-
-            if (midi !== null) {
-                e.preventDefault();
-                if (e.repeat) return;
-
-                try {
-                    await initAudio();
-                    if (isInstrumentLoading) return;
-                    const { x, y } = getKeyVisualPosition(key);
-                    const sustained = true;
-                    playVisualFeedback('user', midi, x, y);
-                    triggerDeepBlueNoteOn('user', midi, sustained);
-                    recordPerformanceEvent({ type: 'note-on', midi, ringX: x, ringY: y, sustained });
-                    activeVisualKeyStates.set(key, { midi });
-
-                    if (supportsHeldNotes(currentSound)) {
-                        playPianoKeyDown(key, midi);
-                    } else {
-                        playMidi(midi);
-                    }
-                } catch (err) {
-                    console.error('Audio init/play failed:', err);
-                }
-            }
-        });
-
-        window.addEventListener('keyup', (e) => {
-            if (!isInteractivePlayback()) return;
-
-            const key = e.key.toLowerCase();
-            const visualState = activeVisualKeyStates.get(key);
-
-            if (visualState) {
-                recordPerformanceEvent({ type: 'note-off', midi: visualState.midi });
-                highlightKey('user', visualState.midi, false);
-                triggerDeepBlueNoteOff('user', visualState.midi);
-                activeVisualKeyStates.delete(key);
-            }
-
-            if (supportsHeldNotes(currentSound) && activePianoKeyStates.has(key)) {
-                releasePianoKey(key);
-            }
-        });
-
-        window.addEventListener('blur', () => {
-            stopLiveInputPlayback();
-        });
-
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'hidden') {
-                stopLiveInputPlayback();
-            }
-        });
-
-        window.addEventListener('mousedown', async (e) => {
-            if (!isInteractivePlayback()) return;
-
-            const topBar = document.getElementById('top-bar');
-            const rect = bottomUi.getBoundingClientRect();
-            const topBarRect = topBar.getBoundingClientRect();
-
-            if (
-                (
-                    e.clientX >= rect.left &&
-                    e.clientX <= rect.right &&
-                    e.clientY >= rect.top &&
-                    e.clientY <= rect.bottom
-                ) ||
-                (
-                    e.clientX >= topBarRect.left &&
-                    e.clientX <= topBarRect.right &&
-                    e.clientY >= topBarRect.top &&
-                    e.clientY <= topBarRect.bottom
-                )
-            ) {
-                return;
-            }
-
-            try {
-                await initAudio();
-                if (isInstrumentLoading) return;
-
-                const midi = getMidiFromScaleKey('a', false, false) ?? 60;
-                const ringPoint = getScreenPointOnPlane(e.clientX, e.clientY, RING_PLANE_Z);
-                playVisualFeedback('user', midi, ringPoint.x, ringPoint.y);
-                triggerDeepBlueNoteOn('user', midi, false);
-                recordPerformanceEvent({ type: 'note-on', midi, ringX: ringPoint.x, ringY: ringPoint.y, sustained: false });
-                playMidi(midi);
-            } catch (err) {
-                console.error('Mouse audio init/play failed:', err);
-            }
-        });
 
         // =========================================================
         // 11. 動畫循環

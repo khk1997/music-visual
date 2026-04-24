@@ -1,5 +1,6 @@
 export const modeScreen = document.getElementById('mode-screen');
 export const playbackScreen = document.getElementById('playback-screen');
+export const topBar = document.getElementById('top-bar');
 export const bottomUi = document.getElementById('bottom-ui');
 export const freePlayCard = document.getElementById('free-play-card');
 export const absolutePitchCard = document.getElementById('absolute-pitch-card');
