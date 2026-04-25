@@ -26,7 +26,6 @@ import {
     themePreviewTitle
 } from './core/dom.js';
 import {
-    BACKGROUND_THEMES,
     MAJOR_SCALE,
     NATURAL_MINOR_SCALE,
     NOTE_TO_PC,
@@ -39,14 +38,14 @@ import { createKeyboardInputController } from './input/keyboard.js';
 import { createLiveInputService } from './input/live-input.js';
 import { createPointerInputController } from './input/pointer.js';
 import { createAbsolutePitchModule } from './modes/absolute-pitch.js';
+import { BACKGROUND_THEMES } from './themes/registry.js';
+import { createPianoFeedbackController } from './ui/piano-feedback.js';
 import { createScreenManager } from './ui/screen-manager.js';
 import { createThemePanelController } from './ui/theme-panel.js';
 
 // =========================================================
 // 1. 音源設定
 // =========================================================
-        const liveKeyHighlights = new Map();
-        const playbackKeyHighlights = new Map();
         const PIANO_TAP_DURATION = 0.12;
         let backgroundVisualsReady = false;
         let isRecording = false;
@@ -159,41 +158,25 @@ import { createThemePanelController } from './ui/theme-panel.js';
             };
         }
 
-        function updateKeyHighlightState(midi) {
-            const keyEl = allKeysMap[midi];
-            if (!keyEl) return;
-
-            const hasLive = (liveKeyHighlights.get(midi) ?? 0) > 0;
-            const hasPlayback = (playbackKeyHighlights.get(midi) ?? 0) > 0;
-
-            keyEl.classList.remove('user-active', 'playback-active', 'mixed-active');
-
-            if (hasLive && hasPlayback) keyEl.classList.add('mixed-active');
-            else if (hasLive) keyEl.classList.add('user-active');
-            else if (hasPlayback) keyEl.classList.add('playback-active');
-        }
-
-        function highlightKey(source, midi, active) {
-            const targetMap = source === 'playback' ? playbackKeyHighlights : liveKeyHighlights;
-            const currentCount = targetMap.get(midi) ?? 0;
-
-            if (active) {
-                targetMap.set(midi, currentCount + 1);
-            } else if (currentCount <= 1) {
-                targetMap.delete(midi);
-            } else {
-                targetMap.set(midi, currentCount - 1);
-            }
-
-            updateKeyHighlightState(midi);
-        }
-
-        function clearHighlightMap(targetMap) {
-            for (const midi of Array.from(targetMap.keys())) {
-                targetMap.delete(midi);
-                updateKeyHighlightState(midi);
-            }
-        }
+        const {
+            clearPlaybackHighlights,
+            highlightKey,
+            playVisualFeedback,
+            triggerTimedHighlight
+        } = createPianoFeedbackController({
+            allKeysMap,
+            createRingPoint: (x, y, z) => new THREE.Vector3(x, y, z),
+            getPlanes: () => ({
+                background: BG_PLANE_Z,
+                mist: MIST_PLANE_Z,
+                ring: RING_PLANE_Z,
+                spark: SPARK_PLANE_Z
+            }),
+            projectPointToPlane,
+            spawnMist,
+            spawnSparks,
+            triggerInteraction
+        });
 
         function isInteractivePlayback() {
             return screenManager?.isInteractivePlayback() ?? false;
@@ -239,17 +222,6 @@ import { createThemePanelController } from './ui/theme-panel.js';
 
         function recordPerformanceEvent(event) {
             transportController?.recordPerformanceEvent(event);
-        }
-
-        function playVisualFeedback(source, midi, ringX, ringY) {
-            const ringPoint = new THREE.Vector3(ringX, ringY, RING_PLANE_Z);
-            const mistPoint = projectPointToPlane(ringPoint, MIST_PLANE_Z);
-            const bgPoint = projectPointToPlane(ringPoint, BG_PLANE_Z);
-            const sparkPoint = projectPointToPlane(ringPoint, SPARK_PLANE_Z);
-
-            triggerInteraction(source, bgPoint, midi);
-            spawnMist(mistPoint, midi);
-            spawnSparks(sparkPoint);
         }
 
         const absolutePitch = createAbsolutePitchModule({
@@ -364,7 +336,7 @@ import { createThemePanelController } from './ui/theme-panel.js';
                 scene.background = new THREE.Color(theme.color);
                 renderer.toneMappingExposure = theme.exposure;
 
-                if (theme.id === 'deep-blue' && getCurrentSound() !== 'piano') {
+                if (theme.id === 'piano-roll' && getCurrentSound() !== 'piano') {
                     soundSelect.value = 'piano';
                     void switchInstrument('piano');
                 }
@@ -418,7 +390,7 @@ import { createThemePanelController } from './ui/theme-panel.js';
                             triggerDeepBlueNoteOff('playback', midi);
                         }
                     }
-                    clearHighlightMap(playbackKeyHighlights);
+                    clearPlaybackHighlights();
                 }
             },
             onRecordingStateChange: (active) => {
@@ -1110,7 +1082,7 @@ import { createThemePanelController } from './ui/theme-panel.js';
         }
 
         function usesDeepBlueNoteLanes() {
-            return getCurrentBackgroundTheme().id === 'deep-blue';
+            return getCurrentBackgroundTheme().id === 'piano-roll';
         }
 
         function clearDeepBlueBars() {
@@ -1827,8 +1799,7 @@ import { createThemePanelController } from './ui/theme-panel.js';
                 impactIdx = (impactIdx + 1) % 20;
             }
 
-            highlightKey(source, midi, true);
-            setTimeout(() => highlightKey(source, midi, false), 150);
+            triggerTimedHighlight(source, midi);
         }
 
         function triggerDeepBlueNoteOn(source, midi, isSustained = false) {
