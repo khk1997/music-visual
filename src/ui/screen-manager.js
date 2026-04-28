@@ -18,6 +18,7 @@ export function createScreenManager({
     getIsRecording,
     onPlayBackHomeClickSound,
     onPlayModeCardClickSound,
+    stopRecordSlots,
     stopPlayback,
     stopRecording
 }) {
@@ -74,11 +75,13 @@ export function createScreenManager({
         if (isFreePlayThemeSelection) {
             if (getIsRecording()) stopRecording();
             if (getIsPlaybackActive()) stopPlayback();
+            stopRecordSlots?.();
         }
 
         if (!isFreePlay) {
             if (getIsRecording()) stopRecording();
             if (getIsPlaybackActive()) stopPlayback();
+            stopRecordSlots?.();
         }
 
         if (!isAbsolutePitch) {
@@ -100,8 +103,8 @@ export function createScreenManager({
         bottomUi.classList.toggle('hidden', !isFreePlay || isFreePlayThemeSelection);
         absolutePitchUi.classList.toggle('active', isAbsolutePitch);
         backgroundToggleButton.classList.toggle('ui-hidden', !isFreePlay || isFreePlayThemeSelection);
-        recordToggleButton.classList.toggle('ui-hidden', !isFreePlay || isFreePlayThemeSelection);
-        playbackToggleButton.classList.toggle('ui-hidden', !isFreePlay || isFreePlayThemeSelection);
+        recordToggleButton?.classList.toggle('ui-hidden', !isFreePlay || isFreePlayThemeSelection);
+        playbackToggleButton?.classList.toggle('ui-hidden', !isFreePlay || isFreePlayThemeSelection);
 
         if (!isFreePlay) {
             themeUi.closeThemePanel();

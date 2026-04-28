@@ -22,6 +22,7 @@ export function createKeyboardInputController({
     onHomeEnter,
     onLiveNoteOff,
     onLiveNoteOn,
+    onRecordSlotHotkey,
     onStopAllLiveInput
 }) {
     const activeVisualKeyStates = new Map();
@@ -42,6 +43,15 @@ export function createKeyboardInputController({
         }
 
         const key = event.key.toLowerCase();
+
+        if (/^[1-6]$/.test(key)) {
+            event.preventDefault();
+            if (!event.repeat) {
+                onRecordSlotHotkey?.(Number(key) - 1);
+            }
+            return;
+        }
+
         const midi = getMidiFromScaleKey(key, event.shiftKey, event.ctrlKey);
 
         if (midi === null) return;

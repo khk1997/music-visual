@@ -33,6 +33,7 @@ import {
 } from './core/config.js';
 import { createPerfMonitor } from './app/perf-monitor.js';
 import { createInstrumentManager } from './audio/instrument-manager.js';
+import { createRecordSlotController } from './audio/record-slots.js';
 import { createTransportController } from './audio/transport.js';
 import { createKeyboardInputController } from './input/keyboard.js';
 import { createLiveInputService } from './input/live-input.js';
@@ -52,6 +53,7 @@ import { createThemePanelController } from './ui/theme-panel.js';
         let screenManager = null;
         let themePanelController = null;
         let transportController = null;
+        let recordSlotController = null;
         let liveInputController = null;
         let keyboardInputController = null;
         let pointerInputController = null;
@@ -87,6 +89,7 @@ import { createThemePanelController } from './ui/theme-panel.js';
         // =========================================================
         const pianoContainer = document.getElementById('piano-container');
         const pianoUi = document.getElementById('piano-ui');
+        const recordSlotButtons = Array.from(document.querySelectorAll('.record-slot-button'));
         const allKeysMap = {};
         let pianoLayoutFrame = null;
 
@@ -195,6 +198,8 @@ import { createThemePanelController } from './ui/theme-panel.js';
         }
 
         function updateTransportButtons() {
+            if (!recordToggleButton || !playbackToggleButton) return;
+
             recordToggleButton.textContent = isRecording ? 'Stop Rec' : 'Record';
             recordToggleButton.classList.toggle('is-active', isRecording);
 
@@ -222,6 +227,7 @@ import { createThemePanelController } from './ui/theme-panel.js';
 
         function recordPerformanceEvent(event) {
             transportController?.recordPerformanceEvent(event);
+            recordSlotController?.recordEvent(event);
         }
 
         const absolutePitch = createAbsolutePitchModule({
@@ -238,12 +244,12 @@ import { createThemePanelController } from './ui/theme-panel.js';
             await transportController?.startPlayback();
         }
 
-        recordToggleButton.addEventListener('click', () => {
+        recordToggleButton?.addEventListener('click', () => {
             if (isRecording) stopRecording();
             else startRecording();
         });
 
-        playbackToggleButton.addEventListener('click', async () => {
+        playbackToggleButton?.addEventListener('click', async () => {
             if (transportController?.getIsPlaybackActive()) {
                 stopPlayback();
                 return;
@@ -369,6 +375,7 @@ import { createThemePanelController } from './ui/theme-panel.js';
             getIsRecording: () => isRecording,
             onPlayBackHomeClickSound: playBackHomeClickSound,
             onPlayModeCardClickSound: playModeCardClickSound,
+            stopRecordSlots: () => recordSlotController?.stopAll(),
             stopPlayback,
             stopRecording
         });
@@ -419,6 +426,38 @@ import { createThemePanelController } from './ui/theme-panel.js';
             updateTransportButtons
         });
 
+        recordSlotController = createRecordSlotController({
+            buttons: recordSlotButtons,
+            createInstrumentInstance,
+            disposeLofiChain,
+            getCurrentSound,
+            getTriggerTime,
+            highlightKey,
+            initAudio,
+            nowSeconds,
+            playMidiWithInstrument,
+            playVisualFeedback,
+            releasePlaybackVisuals: (midi) => {
+                if (typeof midi === 'number') {
+                    triggerDeepBlueNoteOff('playback', midi);
+                    return;
+                }
+
+                for (const barKey of Array.from(liveDeepBlueBars.keys())) {
+                    if (barKey.startsWith('playback:')) {
+                        const playbackMidi = Number(barKey.split(':')[1]);
+                        triggerDeepBlueNoteOff('playback', playbackMidi);
+                    }
+                }
+            },
+            supportsHeldNotes,
+            tapDuration: PIANO_TAP_DURATION,
+            triggerPlaybackNoteOn: (midi, sustained) => {
+                triggerDeepBlueNoteOn('playback', midi, sustained);
+            }
+        });
+        recordSlotController.bind();
+
         liveInputController = createLiveInputService({
             getCurrentSound,
             getInstrument,
@@ -448,6 +487,7 @@ import { createThemePanelController } from './ui/theme-panel.js';
             onHomeEnter: () => transitionFromHome(freePlayCard, 'free-play'),
             onLiveNoteOff: (payload) => liveInputController?.triggerNoteOff(payload),
             onLiveNoteOn: (payload) => liveInputController?.triggerNoteOn(payload),
+            onRecordSlotHotkey: (index) => recordSlotController?.triggerSlot(index),
             onStopAllLiveInput: stopLiveInputPlayback
         });
         keyboardInputController.bind();
