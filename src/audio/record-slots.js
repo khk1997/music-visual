@@ -100,6 +100,14 @@ export function createRecordSlotController({
         }
     }
 
+    function getStats() {
+        return {
+            recordedEvents: slots.reduce((total, slot) => total + slot.events.length, 0),
+            recordingSlots: slots.filter((slot) => slot.state === 'recording').length,
+            playingSlots: slots.filter((slot) => slot.state === 'playing').length
+        };
+    }
+
     function forgetPlaybackTimer(slot, timer) {
         const index = slot.playbackTimers.indexOf(timer);
         if (index >= 0) {
@@ -346,6 +354,7 @@ export function createRecordSlotController({
 
     return {
         bind,
+        getStats,
         recordEvent,
         stopAll,
         triggerSlot

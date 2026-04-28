@@ -40,13 +40,6 @@ export function createPianoFeedbackController({
         updateKeyHighlightState(midi);
     }
 
-    function clearHighlightMap(targetMap) {
-        for (const midi of Array.from(targetMap.keys())) {
-            targetMap.delete(midi);
-            updateKeyHighlightState(midi);
-        }
-    }
-
     function triggerTimedHighlight(source, midi) {
         highlightKey(source, midi, true);
         setTimeout(() => highlightKey(source, midi, false), highlightDurationMs);
@@ -65,8 +58,6 @@ export function createPianoFeedbackController({
     }
 
     return {
-        clearLiveHighlights: () => clearHighlightMap(liveKeyHighlights),
-        clearPlaybackHighlights: () => clearHighlightMap(playbackKeyHighlights),
         highlightKey,
         playVisualFeedback,
         triggerTimedHighlight

@@ -15,8 +15,6 @@ import {
     modeSelect,
     modeStatus,
     playbackScreen,
-    playbackToggleButton,
-    recordToggleButton,
     soundSelect,
     topBar,
     themeList,
@@ -34,7 +32,6 @@ import {
 import { createPerfMonitor } from './app/perf-monitor.js';
 import { createInstrumentManager } from './audio/instrument-manager.js';
 import { createRecordSlotController } from './audio/record-slots.js';
-import { createTransportController } from './audio/transport.js';
 import { createKeyboardInputController } from './input/keyboard.js';
 import { createLiveInputService } from './input/live-input.js';
 import { createPointerInputController } from './input/pointer.js';
@@ -49,10 +46,8 @@ import { createThemePanelController } from './ui/theme-panel.js';
 // =========================================================
         const PIANO_TAP_DURATION = 0.12;
         let backgroundVisualsReady = false;
-        let isRecording = false;
         let screenManager = null;
         let themePanelController = null;
-        let transportController = null;
         let recordSlotController = null;
         let liveInputController = null;
         let keyboardInputController = null;
@@ -60,12 +55,10 @@ import { createThemePanelController } from './ui/theme-panel.js';
         const {
             bindSoundSelect,
             createInstrumentInstance,
-            createPlaybackInstrument,
             disposeLofiChain,
             getCurrentSound,
             getInstrument,
             getIsInstrumentLoading,
-            getPlaybackInstrument,
             getTriggerTime,
             initAudio,
             playBackHomeClickSound,
@@ -162,7 +155,6 @@ import { createThemePanelController } from './ui/theme-panel.js';
         }
 
         const {
-            clearPlaybackHighlights,
             highlightKey,
             playVisualFeedback,
             triggerTimedHighlight
@@ -197,36 +189,7 @@ import { createThemePanelController } from './ui/theme-panel.js';
             return performance.now() * 0.001;
         }
 
-        function updateTransportButtons() {
-            if (!recordToggleButton || !playbackToggleButton) return;
-
-            recordToggleButton.textContent = isRecording ? 'Stop Rec' : 'Record';
-            recordToggleButton.classList.toggle('is-active', isRecording);
-
-            const isPlaybackActive = transportController?.getIsPlaybackActive() ?? false;
-            const recordedEvents = transportController?.getRecordedEvents() ?? [];
-            playbackToggleButton.textContent = isPlaybackActive ? 'Stop Loop' : 'Playback';
-            playbackToggleButton.classList.toggle('is-active', isPlaybackActive);
-
-            const playbackDisabled = isRecording || recordedEvents.length === 0;
-            playbackToggleButton.classList.toggle('is-disabled', playbackDisabled);
-            playbackToggleButton.disabled = playbackDisabled;
-        }
-
-        function stopPlayback() {
-            transportController?.stopPlayback();
-        }
-
-        function stopRecording() {
-            transportController?.stopRecording();
-        }
-
-        function startRecording() {
-            transportController?.startRecording();
-        }
-
         function recordPerformanceEvent(event) {
-            transportController?.recordPerformanceEvent(event);
             recordSlotController?.recordEvent(event);
         }
 
@@ -239,26 +202,6 @@ import { createThemePanelController } from './ui/theme-panel.js';
             playMidiWithInstrument,
             playVisualFeedback
         });
-
-        async function startPlayback() {
-            await transportController?.startPlayback();
-        }
-
-        recordToggleButton?.addEventListener('click', () => {
-            if (isRecording) stopRecording();
-            else startRecording();
-        });
-
-        playbackToggleButton?.addEventListener('click', async () => {
-            if (transportController?.getIsPlaybackActive()) {
-                stopPlayback();
-                return;
-            }
-
-            await startPlayback();
-        });
-
-        updateTransportButtons();
 
         // =========================================================
         // 3. 調性系統
@@ -368,62 +311,10 @@ import { createThemePanelController } from './ui/theme-panel.js';
             modeScreen,
             modeStatus,
             playbackScreen,
-            playbackToggleButton,
-            recordToggleButton,
             themeUi: themePanelController,
-            getIsPlaybackActive: () => transportController?.getIsPlaybackActive() ?? false,
-            getIsRecording: () => isRecording,
             onPlayBackHomeClickSound: playBackHomeClickSound,
             onPlayModeCardClickSound: playModeCardClickSound,
-            stopRecordSlots: () => recordSlotController?.stopAll(),
-            stopPlayback,
-            stopRecording
-        });
-
-        transportController = createTransportController({
-            createPlaybackInstrument,
-            getCurrentSound,
-            getPlaybackInstrument,
-            getTriggerTime,
-            highlightKey,
-            initAudio,
-            isRecordingActive: () => isRecording,
-            nowSeconds,
-            onPlaybackStateChange: (active) => {
-                if (!active) {
-                    for (const barKey of Array.from(liveDeepBlueBars.keys())) {
-                        if (barKey.startsWith('playback:')) {
-                            const midi = Number(barKey.split(':')[1]);
-                            triggerDeepBlueNoteOff('playback', midi);
-                        }
-                    }
-                    clearPlaybackHighlights();
-                }
-            },
-            onRecordingStateChange: (active) => {
-                isRecording = active;
-            },
-            playMidiWithInstrument,
-            playVisualFeedback,
-            releasePlaybackVisuals: (midi) => {
-                if (typeof midi === 'number') {
-                    triggerDeepBlueNoteOff('playback', midi);
-                    return;
-                }
-
-                for (const barKey of Array.from(liveDeepBlueBars.keys())) {
-                    if (barKey.startsWith('playback:')) {
-                        const playbackMidi = Number(barKey.split(':')[1]);
-                        triggerDeepBlueNoteOff('playback', playbackMidi);
-                    }
-                }
-            },
-            supportsHeldNotes,
-            tapDuration: PIANO_TAP_DURATION,
-            triggerPlaybackNoteOn: (midi, sustained) => {
-                triggerDeepBlueNoteOn('playback', midi, sustained);
-            },
-            updateTransportButtons
+            stopRecordSlots: () => recordSlotController?.stopAll()
         });
 
         recordSlotController = createRecordSlotController({
@@ -1584,8 +1475,8 @@ import { createThemePanelController } from './ui/theme-panel.js';
                 activeSparks: activeSparks.length,
                 activeMists: activeMists.length,
                 activeJets: activeDeepBlueJets.length,
-                recordedEvents: transportController?.getRecordedEvents().length ?? 0,
-                isPlaybackActive: transportController?.getIsPlaybackActive() ?? false
+                recordedEvents: recordSlotController?.getStats().recordedEvents ?? 0,
+                isPlaybackActive: (recordSlotController?.getStats().playingSlots ?? 0) > 0
             })
         });
 

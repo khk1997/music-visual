@@ -12,7 +12,6 @@ export function createInstrumentManager({
     onStopLiveInput
 }) {
     let instrument = null;
-    let playbackInstrument = null;
     let reverb = null;
     let limiter = null;
     let audioStarted = false;
@@ -21,16 +20,10 @@ export function createInstrumentManager({
     let instrumentSwitchToken = 0;
     let lofiVibrato = null;
     let lofiFilter = null;
-    let playbackLofiVibrato = null;
-    let playbackLofiFilter = null;
     let uiClickSynth = null;
 
     function getInstrument() {
         return instrument;
-    }
-
-    function getPlaybackInstrument() {
-        return playbackInstrument;
     }
 
     function getCurrentSound() {
@@ -129,26 +122,6 @@ export function createInstrumentManager({
         if (filterRef && typeof filterRef.dispose === 'function') {
             filterRef.dispose();
         }
-    }
-
-    function disposeCurrentInstrument() {
-        disposeLofiChain(lofiVibrato, lofiFilter);
-        if (instrument && typeof instrument.dispose === 'function') {
-            instrument.dispose();
-        }
-        instrument = null;
-        lofiVibrato = null;
-        lofiFilter = null;
-    }
-
-    function disposePlaybackInstrument() {
-        disposeLofiChain(playbackLofiVibrato, playbackLofiFilter);
-        if (playbackInstrument && typeof playbackInstrument.dispose === 'function') {
-            playbackInstrument.dispose();
-        }
-        playbackInstrument = null;
-        playbackLofiVibrato = null;
-        playbackLofiFilter = null;
     }
 
     function setInstrumentLoadingState(loading) {
@@ -335,15 +308,6 @@ export function createInstrumentManager({
         swapCurrentInstrument(created, 'harp');
     }
 
-    async function createPlaybackInstrument(type) {
-        disposePlaybackInstrument();
-
-        const created = await createInstrumentInstance(type);
-        playbackInstrument = created.instrument;
-        playbackLofiVibrato = created.lofiVibrato;
-        playbackLofiFilter = created.lofiFilter;
-    }
-
     async function createInstrument(type) {
         if (type === 'piano') {
             await createPianoInstrument();
@@ -430,14 +394,10 @@ export function createInstrumentManager({
     return {
         bindSoundSelect,
         createInstrumentInstance,
-        createPlaybackInstrument,
-        disposeCurrentInstrument,
         disposeLofiChain,
-        disposePlaybackInstrument,
         getCurrentSound,
         getInstrument,
         getIsInstrumentLoading,
-        getPlaybackInstrument,
         getTriggerTime,
         initAudio,
         playBackHomeClickSound,
