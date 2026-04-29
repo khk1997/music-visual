@@ -85,6 +85,8 @@ import { createThemePanelController } from './ui/theme-panel.js';
         const recordSlotButtons = Array.from(document.querySelectorAll('.record-slot-button'));
         const allKeysMap = {};
         let pianoLayoutFrame = null;
+        const bottomUiDesignWidth = 1680;
+        const bottomUiViewportGutter = 32;
 
         function createPianoKeys() {
             const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -98,6 +100,14 @@ import { createThemePanelController } from './ui/theme-panel.js';
         }
 
         createPianoKeys();
+
+        function syncBottomUiScale() {
+            if (!bottomUi) return;
+
+            const availableWidth = Math.max(0, window.innerWidth - bottomUiViewportGutter);
+            const nextScale = Math.min(1, availableWidth / bottomUiDesignWidth);
+            bottomUi.style.setProperty('--bottom-ui-scale', nextScale.toFixed(4));
+        }
 
         function syncPianoLayoutWidth() {
             const measuredWidth = pianoContainer.clientWidth;
@@ -118,8 +128,10 @@ import { createThemePanelController } from './ui/theme-panel.js';
             });
         }
 
+        syncBottomUiScale();
         schedulePianoLayoutSync();
         window.addEventListener('resize', schedulePianoLayoutSync);
+        window.addEventListener('resize', syncBottomUiScale);
 
         if (typeof ResizeObserver !== 'undefined') {
             new ResizeObserver(() => {

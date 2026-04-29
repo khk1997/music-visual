@@ -526,12 +526,13 @@
         }
 
         #bottom-ui {
+            --bottom-ui-scale: 1;
             position: absolute;
             bottom: 8px;
             left: 50%;
-            transform: translateX(-50%);
-            width: 86%;
-            max-width: 1500px;
+            transform: translateX(-50%) scale(var(--bottom-ui-scale));
+            transform-origin: bottom center;
+            width: 1680px;
             height: 124px;
             display: flex;
             gap: 12px;
