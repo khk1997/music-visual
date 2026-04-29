@@ -1,35 +1,31 @@
 export function createThemePanelController({
-    themes,
-    themePanel,
+    backgroundToggleButton,
     themeList,
-    themePreviewTitle,
+    themePanel,
     themePreviewDescription,
     themePreviewMedia,
-    backgroundToggleButton,
-    getCurrentBackgroundIndex,
-    setCurrentBackgroundIndex,
-    getHoveredThemeIndex,
-    setHoveredThemeIndex,
-    getThemePanelActiveIndex,
-    setThemePanelActiveIndexState,
-    getThemeDragState,
-    setThemeDragState,
-    getSuppressThemeClickUntil,
-    setSuppressThemeClickUntil,
-    getIsThemeSelectionTransitioning,
-    setIsThemeSelectionTransitioning,
-    getHasConfirmedThemeSelectionInCurrentFlow,
-    setHasConfirmedThemeSelectionInCurrentFlow,
-    getCurrentScreen,
-    getIsFreePlayThemeSelection,
-    themeSelectionTransitionTimers,
-    getCurrentTheme,
-    onThemeConfirm,
+    themePreviewTitle,
+    themes,
+    getUiState,
     onApplyTheme,
-    onTransitionSound
+    onPlaySelectSound,
+    requestScreenChange
 }) {
+    let currentBackgroundIndex = 0;
+    let hoveredThemeIndex = null;
+    let themePanelActiveIndex = 0;
+    let themeDragState = null;
+    let suppressThemeClickUntil = 0;
+    let hasConfirmedThemeSelectionInCurrentFlow = false;
+    let isThemeSelectionTransitioning = false;
+    const transitionTimers = [];
+
+    function getCurrentBackgroundTheme() {
+        return themes[currentBackgroundIndex];
+    }
+
     function getThemePanelPreviewIndex() {
-        return getHoveredThemeIndex() === null ? getThemePanelActiveIndex() : getHoveredThemeIndex();
+        return hoveredThemeIndex === null ? themePanelActiveIndex : hoveredThemeIndex;
     }
 
     function updateThemeListVisuals(activeIndex) {
@@ -67,17 +63,19 @@ export function createThemePanelController({
     function setThemePanelActiveIndex(index, options = {}) {
         const { syncHover = true } = options;
         const boundedIndex = Math.max(0, Math.min(themes.length - 1, index));
-        setThemePanelActiveIndexState(boundedIndex);
+        themePanelActiveIndex = boundedIndex;
         if (syncHover) {
-            setHoveredThemeIndex(null);
+            hoveredThemeIndex = null;
         }
         updateThemePanelSelection();
     }
 
     function updateThemePanelSelection() {
-        const currentTheme = getCurrentTheme();
+        const currentTheme = getCurrentBackgroundTheme();
         const previewIndex = getThemePanelPreviewIndex();
         const previewTheme = themes[(previewIndex + themes.length) % themes.length];
+        const { currentScreen, isFreePlayThemeSelection } = getUiState();
+
         backgroundToggleButton.textContent = `Theme: ${currentTheme.label}`;
 
         if (themePreviewTitle) {
@@ -90,37 +88,29 @@ export function createThemePanelController({
             themePreviewMedia.style.background = previewTheme.previewBackground || '';
         }
 
-        if (!themeList || getIsThemeSelectionTransitioning()) return;
+        if (!themeList || isThemeSelectionTransitioning) return;
         const themeButtons = themeList.querySelectorAll('.theme-list-item');
-        const shouldShowSelected = !(getCurrentScreen() === 'free-play'
-            && getIsFreePlayThemeSelection()
-            && !getHasConfirmedThemeSelectionInCurrentFlow());
+        const shouldShowSelected = !(currentScreen === 'free-play'
+            && isFreePlayThemeSelection
+            && !hasConfirmedThemeSelectionInCurrentFlow);
+
         for (const button of themeButtons) {
             const buttonIndex = Number(button.dataset.themeIndex);
-            button.classList.toggle('is-selected', shouldShowSelected && buttonIndex === getCurrentBackgroundIndex());
+            button.classList.toggle('is-selected', shouldShowSelected && buttonIndex === currentBackgroundIndex);
         }
+
         updateThemeListVisuals(previewIndex);
     }
 
-    function closeThemePanel() {
-        if (!themePanel) return;
-        themePanel.classList.remove('is-open');
-        themePanel.setAttribute('aria-hidden', 'true');
-        backgroundToggleButton.classList.remove('is-active');
-        setHoveredThemeIndex(null);
-        setThemeDragState(null);
-        updateThemePanelSelection();
-    }
-
     function clearThemeSelectionTransitionTimers() {
-        while (themeSelectionTransitionTimers.length) {
-            clearTimeout(themeSelectionTransitionTimers.pop());
+        while (transitionTimers.length) {
+            clearTimeout(transitionTimers.pop());
         }
     }
 
     function resetThemeSelectionVisualState() {
         clearThemeSelectionTransitionTimers();
-        setIsThemeSelectionTransitioning(false);
+        isThemeSelectionTransitioning = false;
         if (!themePanel) return;
         themePanel.classList.remove('is-transitioning', 'is-exiting');
         if (!themeList) return;
@@ -134,12 +124,19 @@ export function createThemePanelController({
         }
     }
 
+    function applyBackgroundTheme(index) {
+        currentBackgroundIndex = (index + themes.length) % themes.length;
+        const theme = getCurrentBackgroundTheme();
+        onApplyTheme(theme);
+        updateThemePanelSelection();
+    }
+
     function startThemeSelectionTransition(index) {
-        if (!themePanel || !themeList || getIsThemeSelectionTransitioning()) return;
+        if (!themePanel || !themeList || isThemeSelectionTransitioning) return;
         const themeButtons = Array.from(themeList.querySelectorAll('.theme-list-item'));
         if (themeButtons.length === 0) return;
 
-        onTransitionSound();
+        void onPlaySelectSound();
 
         if (document.activeElement instanceof HTMLElement) {
             document.activeElement.blur();
@@ -151,21 +148,31 @@ export function createThemePanelController({
             button.classList.toggle('is-muted', buttonIndex !== index);
         }
 
-        setIsThemeSelectionTransitioning(true);
-        setHasConfirmedThemeSelectionInCurrentFlow(true);
-        setHoveredThemeIndex(null);
+        isThemeSelectionTransitioning = true;
+        hasConfirmedThemeSelectionInCurrentFlow = true;
+        hoveredThemeIndex = null;
         themePanel.classList.add('is-transitioning');
-        onApplyTheme(index);
+        applyBackgroundTheme(index);
 
-        themeSelectionTransitionTimers.push(window.setTimeout(() => {
+        transitionTimers.push(window.setTimeout(() => {
             if (!themePanel) return;
             themePanel.classList.add('is-exiting');
         }, 300));
 
-        themeSelectionTransitionTimers.push(window.setTimeout(() => {
+        transitionTimers.push(window.setTimeout(() => {
             resetThemeSelectionVisualState();
-            onThemeConfirm();
+            requestScreenChange('free-play', { skipThemeSelection: true });
         }, 760));
+    }
+
+    function closeThemePanel() {
+        if (!themePanel) return;
+        themePanel.classList.remove('is-open');
+        themePanel.setAttribute('aria-hidden', 'true');
+        backgroundToggleButton.classList.remove('is-active');
+        hoveredThemeIndex = null;
+        themeDragState = null;
+        updateThemePanelSelection();
     }
 
     function openThemePanel() {
@@ -173,9 +180,17 @@ export function createThemePanelController({
         themePanel.classList.add('is-open');
         themePanel.setAttribute('aria-hidden', 'false');
         backgroundToggleButton.classList.add('is-active');
-        setThemePanelActiveIndexState(getCurrentBackgroundIndex());
-        setHoveredThemeIndex(null);
+        themePanelActiveIndex = currentBackgroundIndex;
+        hoveredThemeIndex = null;
         updateThemePanelSelection();
+    }
+
+    function beginThemeSelectionFlow() {
+        hasConfirmedThemeSelectionInCurrentFlow = false;
+    }
+
+    function resetThemeSelectionFlow() {
+        hasConfirmedThemeSelectionInCurrentFlow = false;
     }
 
     function setupThemePanel() {
@@ -183,7 +198,6 @@ export function createThemePanelController({
         themeList.innerHTML = '';
 
         const handleThemeDragMove = (clientY) => {
-            const themeDragState = getThemeDragState();
             if (!themeDragState) return;
             const deltaY = clientY - themeDragState.startY;
             const nextIndex = Math.max(
@@ -194,9 +208,9 @@ export function createThemePanelController({
                 )
             );
 
-            if (nextIndex !== getThemePanelActiveIndex()) {
-                setThemePanelActiveIndexState(nextIndex);
-                setHoveredThemeIndex(null);
+            if (nextIndex !== themePanelActiveIndex) {
+                themePanelActiveIndex = nextIndex;
+                hoveredThemeIndex = null;
                 updateThemePanelSelection();
             }
 
@@ -207,65 +221,63 @@ export function createThemePanelController({
 
         themeList.addEventListener('pointerdown', (event) => {
             if (!(event.target instanceof HTMLElement)) return;
-            const targetButton = event.target.closest('.theme-list-item');
-            if (!targetButton) return;
+            if (!event.target.closest('.theme-list-item')) return;
 
-            setThemeDragState({
+            themeDragState = {
                 pointerId: event.pointerId,
                 startY: event.clientY,
-                startIndex: getThemePanelActiveIndex(),
+                startIndex: themePanelActiveIndex,
                 dragged: false,
-                targetIndex: Number(targetButton.dataset.themeIndex ?? -1),
-                targetWasActive: targetButton.classList.contains('is-active')
-            });
+                targetIndex: Number(event.target.closest('.theme-list-item')?.dataset.themeIndex ?? -1),
+                targetWasActive: event.target.closest('.theme-list-item')?.classList.contains('is-active') ?? false
+            };
             themeList.setPointerCapture(event.pointerId);
         });
 
         themeList.addEventListener('pointermove', (event) => {
-            const themeDragState = getThemeDragState();
             if (!themeDragState || themeDragState.pointerId !== event.pointerId) return;
             handleThemeDragMove(event.clientY);
         });
 
         const finishThemeDrag = (event) => {
-            const themeDragState = getThemeDragState();
             if (!themeDragState || themeDragState.pointerId !== event.pointerId) return;
 
             if (themeDragState.dragged) {
-                setSuppressThemeClickUntil(performance.now() + 180);
+                suppressThemeClickUntil = performance.now() + 180;
             } else if (
                 themeDragState.targetIndex >= 0
-                && performance.now() >= getSuppressThemeClickUntil()
+                && performance.now() >= suppressThemeClickUntil
             ) {
-                if (!themeDragState.targetWasActive || getThemePanelActiveIndex() !== themeDragState.targetIndex) {
+                if (!themeDragState.targetWasActive || themePanelActiveIndex !== themeDragState.targetIndex) {
                     setThemePanelActiveIndex(themeDragState.targetIndex);
                 } else {
                     startThemeSelectionTransition(themeDragState.targetIndex);
                 }
             }
+
             if (themeList.hasPointerCapture(event.pointerId)) {
                 themeList.releasePointerCapture(event.pointerId);
             }
-            setThemeDragState(null);
+            themeDragState = null;
         };
 
         themeList.addEventListener('pointerup', finishThemeDrag);
         themeList.addEventListener('pointercancel', finishThemeDrag);
         themeList.addEventListener('wheel', (event) => {
             event.preventDefault();
-            if (getIsThemeSelectionTransitioning()) return;
+            if (isThemeSelectionTransitioning) return;
 
             const direction = event.deltaY > 0 ? 1 : -1;
             if (direction === 0) return;
 
             const nextIndex = Math.max(
                 0,
-                Math.min(themes.length - 1, getThemePanelActiveIndex() + direction)
+                Math.min(themes.length - 1, themePanelActiveIndex + direction)
             );
 
-            if (nextIndex !== getThemePanelActiveIndex()) {
-                setThemePanelActiveIndexState(nextIndex);
-                setHoveredThemeIndex(null);
+            if (nextIndex !== themePanelActiveIndex) {
+                themePanelActiveIndex = nextIndex;
+                hoveredThemeIndex = null;
                 updateThemePanelSelection();
             }
         }, { passive: false });
@@ -282,30 +294,25 @@ export function createThemePanelController({
                 setThemePanelActiveIndex(index);
             });
             button.addEventListener('blur', () => {
-                setHoveredThemeIndex(null);
+                hoveredThemeIndex = null;
                 updateThemePanelSelection();
             });
             item.appendChild(button);
             themeList.appendChild(item);
         });
 
-        setThemePanelActiveIndexState(getCurrentBackgroundIndex());
-        updateThemePanelSelection();
-    }
-
-    function applyBackgroundTheme(index) {
-        const nextIndex = (index + themes.length) % themes.length;
-        setCurrentBackgroundIndex(nextIndex);
-        onApplyTheme(nextIndex);
+        themePanelActiveIndex = currentBackgroundIndex;
         updateThemePanelSelection();
     }
 
     return {
         applyBackgroundTheme,
+        beginThemeSelectionFlow,
         closeThemePanel,
+        getCurrentBackgroundTheme,
         openThemePanel,
+        resetThemeSelectionFlow,
         resetThemeSelectionVisualState,
-        setThemePanelActiveIndex,
         setupThemePanel,
         updateThemePanelSelection
     };
