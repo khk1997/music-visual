@@ -1,4 +1,3 @@
-const PANEL_STORAGE_KEY = 'visual-music-game.perf-panel.visible';
 const STATUS_COLORS = {
     good: '#8df7c5',
     warning: '#ffd36e',
@@ -35,11 +34,7 @@ export function createPerfMonitor({
     getPixelRatio,
     getStateSnapshot
 }) {
-    const params = new URLSearchParams(window.location.search);
-    const debugEnabled = params.get('debug') === '1';
-    const storedPreference = window.localStorage.getItem(PANEL_STORAGE_KEY);
-
-    let visible = storedPreference === null ? debugEnabled : storedPreference === '1';
+    let visible = false;
     let frameCount = 0;
     let fps = 0;
     let lastFpsSampleAt = performance.now();
@@ -159,7 +154,6 @@ export function createPerfMonitor({
     function setVisible(nextVisible) {
         visible = nextVisible;
         panel.style.display = visible ? 'block' : 'none';
-        window.localStorage.setItem(PANEL_STORAGE_KEY, visible ? '1' : '0');
     }
 
     function updatePanel(nowMs) {
